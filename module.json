@@ -1,0 +1,17 @@
+{
+  "id": "synch-minimap",
+  "title": "fvtt-sync-minimap",
+  "version": "0.0.0",
+  "compatibility": {
+    "minimum": "0",
+    "verified": "0"
+  },
+  "description": "add function",
+  "authors": [
+    {
+      "name": "modelbandit",
+      "flags": {}
+    }
+  ],
+  "url": "https://github.com/ModelBandit/fvtt-sync-minimap"
+}
