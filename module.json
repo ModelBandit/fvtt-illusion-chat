@@ -1,17 +1,15 @@
 {
-  "id": "synch-minimap",
-  "title": "fvtt-sync-minimap",
+  "id": "fvtt-illusion-chat",
+  "title": "fvtt-illusion-chat",
   "version": "0.0.0",
   "compatibility": {
     "minimum": "0",
     "verified": "0"
   },
-  "description": "add function",
-  "authors": [
-    {
-      "name": "modelbandit",
-      "flags": {}
-    }
+  "esmodules": [
+    "scripts/main.js"
   ],
-  "url": "https://github.com/ModelBandit/fvtt-sync-minimap"
+  "styles": [
+    "styles/main.css"
+  ]
 }
