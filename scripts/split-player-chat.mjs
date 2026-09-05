@@ -1,4 +1,6 @@
 const MODULE_ID = "split-player-chat";
+const FLAG_SCOPE = MODULE_ID;
+const SCHEMA_VERSION = 3;
 
 const state = {
   selected: new Set(),
@@ -9,18 +11,57 @@ const state = {
   chatInput: null,
   captureHandler: null,
   baseInputHandler: null,
-  composing: false,
-  sending: false
+  sending: false,
+  syncingHistory: false,
+  historySyncChain: Promise.resolve()
 };
 
-Hooks.once("ready", () => {
+Hooks.once("init", () => {
+  game.settings.register(MODULE_ID, "selectedPlayers", {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { ids: [] }
+  });
+});
+
+Hooks.once("ready", async () => {
   if (!game.user.isGM) return;
+
+  const saved = game.settings.get(MODULE_ID, "selectedPlayers") ?? { ids: [] };
+  state.selected = new Set(Array.isArray(saved.ids) ? saved.ids : []);
+
   mount();
+  await queueContentSync();
 });
 
 Hooks.on("renderChatLog", () => {
   if (!game.user?.isGM) return;
   queueMicrotask(mount);
+});
+
+// schema v3의 플레이어용 고정 로그는 GM 화면에서는 숨긴다.
+// 플레이어 화면에서는 실제 whisper 권한은 유지하되, 이 모듈이 만든 자기 전용 로그에 한해서
+// Foundry 기본 "To: 이름" 표기와 whisper 전용 색상만 제거해 일반 채팅처럼 보이게 한다.
+Hooks.on("renderChatMessage", (message, html) => {
+  const flags = message.flags?.[FLAG_SCOPE];
+  if (flags?.schemaVersion !== SCHEMA_VERSION || flags?.kind !== "player-slot") return;
+
+  const element = html?.[0] ?? html;
+  if (!(element instanceof HTMLElement)) return;
+
+  if (game.user?.isGM) {
+    element.style.display = "none";
+    return;
+  }
+
+  // 다른 플레이어용 슬롯은 원래 whisper 권한 때문에 렌더되지 않지만,
+  // 혹시 렌더 훅이 호출되더라도 자기 슬롯에만 외형 변경을 적용한다.
+  if (flags.targetUserId !== game.user?.id) return;
+
+  element.classList.remove("whisper");
+  element.classList.add("spc-player-visible-message");
+  element.querySelectorAll(".whisper-to").forEach(node => node.remove());
 });
 
 Hooks.on("createUser", refreshPlayers);
@@ -29,10 +70,12 @@ Hooks.on("deleteUser", refreshPlayers);
 
 function refreshPlayers() {
   if (!game.user?.isGM) return;
-  queueMicrotask(() => {
+  queueMicrotask(async () => {
     mount();
     renderPlayerList();
     renderPrivateInputs();
+    await persistSelection();
+    await queueContentSync();
   });
 }
 
@@ -40,6 +83,12 @@ function getPlayers() {
   return Array.from(game.users ?? [])
     .filter(user => !user.isGM)
     .sort((a, b) => a.name.localeCompare(b.name, game.i18n.lang || undefined));
+}
+
+function getGmIds() {
+  return Array.from(game.users ?? [])
+    .filter(user => user.isGM)
+    .map(user => user.id);
 }
 
 function mount() {
@@ -99,16 +148,12 @@ function renderPlayerList() {
     checkbox.dataset.userId = player.id;
     checkbox.checked = state.selected.has(player.id);
 
-    checkbox.addEventListener("change", () => {
-      // 토글 직전의 모든 문자열을 먼저 저장한다.
-      // 기본 채팅과 개인 채팅은 서로 완전히 별개의 draft로 유지한다.
+    checkbox.addEventListener("change", async () => {
       saveVisibleDrafts();
 
       if (checkbox.checked) {
         state.selected.add(player.id);
         if (!state.drafts.has(player.id)) {
-          // 처음 체크하는 순간에는 현재 기본 채팅 문자열을 개인 draft의 출발점으로 복제한다.
-          // 이후 체크를 풀었다 다시 켜면 이 값을 덮어쓰지 않고 마지막 개인 문자열을 복원한다.
           state.drafts.set(player.id, state.baseDraft);
         }
       } else {
@@ -117,6 +162,16 @@ function renderPlayerList() {
 
       restoreBaseDraft();
       renderPrivateInputs();
+
+      try {
+        await persistSelection();
+        // whisper/recipient는 절대 바꾸지 않는다.
+        // 해당 플레이어에게 이미 존재하는 고정 ChatMessage의 content만 교체한다.
+        await queueContentSync(player.id);
+      } catch (error) {
+        console.error(`${MODULE_ID} | 체크 상태 반영 실패`, error);
+        ui.notifications?.error(`채팅 로그 내용 전환 실패: ${error.message}`);
+      }
     });
 
     const dot = document.createElement("span");
@@ -136,7 +191,6 @@ function renderPrivateInputs() {
   const inputsHost = state.root.querySelector("[data-spc-inputs]");
   if (!inputsHost) return;
 
-  // 화면에서 사라질 때도 textarea의 최신 값을 먼저 보존한다.
   for (const textarea of inputsHost.querySelectorAll("textarea[data-user-id]")) {
     state.drafts.set(textarea.dataset.userId, textarea.value);
   }
@@ -157,19 +211,15 @@ function renderPrivateInputs() {
     const textarea = document.createElement("textarea");
     textarea.dataset.userId = player.id;
     textarea.placeholder = `${player.name}에게만 보낼 문자열`;
-    textarea.value = state.drafts.get(player.id) ?? "";
+    textarea.value = state.drafts.get(player.id) ?? state.baseDraft;
     textarea.spellcheck = false;
 
     textarea.addEventListener("input", () => {
       state.drafts.set(player.id, textarea.value);
     });
 
-    // 개인 입력창에서는 Enter를 줄바꿈으로만 쓴다.
-    // 실제 전송 트리거는 기존 Foundry 기본 채팅창의 Enter이다.
     textarea.addEventListener("keydown", event => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.stopPropagation();
-      }
+      if (event.key === "Enter" && !event.shiftKey) event.stopPropagation();
     });
 
     card.append(label, textarea);
@@ -182,7 +232,6 @@ function bindChatInput() {
   if (!input) return;
   if (state.chatInput === input && state.captureHandler) return;
 
-  // Foundry가 채팅 UI를 다시 그려 input 노드가 교체되는 경우에도 기존 기본 문자열을 보존한다.
   if (state.chatInput) {
     if (state.baseInputHandler) state.chatInput.removeEventListener("input", state.baseInputHandler);
     if (state.captureHandler) state.chatInput.removeEventListener("keydown", state.captureHandler, true);
@@ -226,6 +275,13 @@ function restoreBaseDraft() {
   state.chatInput.value = state.baseDraft;
 }
 
+async function persistSelection() {
+  const validIds = new Set(getPlayers().map(player => player.id));
+  for (const id of Array.from(state.selected)) {
+    if (!validIds.has(id)) state.selected.delete(id);
+  }
+  await game.settings.set(MODULE_ID, "selectedPlayers", { ids: Array.from(state.selected) });
+}
 
 async function onBaseChatKeyDown(event) {
   if (!game.user?.isGM) return;
@@ -233,13 +289,12 @@ async function onBaseChatKeyDown(event) {
 
   const isEnter = (event.code === "Enter" || event.code === "NumpadEnter") && !event.shiftKey;
   if (!isEnter) return;
-  if (!state.selected.size) return; // 아무도 체크되지 않았다면 Foundry 원래 채팅 동작을 그대로 둔다.
+  if (!state.selected.size) return;
 
   const players = getPlayers();
   const checked = players.filter(player => state.selected.has(player.id));
   if (!checked.length) return;
 
-  // 코어 ChatLog의 Enter 핸들러보다 먼저 잡아서 public 메시지가 새어 나가지 않게 한다.
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
@@ -248,25 +303,38 @@ async function onBaseChatKeyDown(event) {
 
   saveVisibleDrafts();
   const baseText = state.baseDraft;
-
-  const hasPrivateText = checked.some(player => (state.drafts.get(player.id) ?? "").trim().length > 0);
-  const unchecked = players.filter(player => !state.selected.has(player.id));
-  const hasDefaultText = unchecked.length > 0 && baseText.trim().length > 0;
-  if (!hasPrivateText && !hasDefaultText) return;
+  const hasAnyText = players.some(player => {
+    const privateText = state.drafts.get(player.id) ?? "";
+    return baseText.trim().length > 0 || privateText.trim().length > 0;
+  });
+  if (!hasAnyText) return;
 
   state.sending = true;
   try {
-    // 체크된 플레이어: 각각 완전히 별도의 whisper 메시지를 보낸다.
-    for (const player of checked) {
-      const text = state.drafts.get(player.id) ?? "";
-      if (!text.trim()) continue;
-      await sendWhisper([player.id], text, player.name);
-    }
+    const batchId = foundry?.utils?.randomID?.() ?? crypto.randomUUID();
+    const encodedDefault = toChatHtml(baseText);
 
-    // 체크되지 않은 플레이어: 기존 채팅창 문자열을 한 그룹으로 보낸다.
-    // public 메시지로 만들지 않기 때문에 체크된 플레이어에게 기본 문자열이 노출되지 않는다.
-    if (hasDefaultText) {
-      await sendWhisper(unchecked.map(player => player.id), baseText, null);
+    // GM 화면에는 한 배치당 요약 로그 하나만 만든다.
+    // 플레이어 슬롯 메시지는 GM 렌더에서 숨기므로 GM 로그가 플레이어 수만큼 늘어나 보이지 않는다.
+    await createGmSummaryMessage({ batchId, defaultHtml: encodedDefault });
+
+    // 각 플레이어는 처음부터 자기 전용 ChatMessage 하나를 고정으로 갖는다.
+    // 이 메시지의 whisper 대상은 영구히 [해당 플레이어]로 유지한다.
+    // 이후 체크 토글은 동일 메시지의 content만 public/private 사이에서 교체한다.
+    for (const player of players) {
+      const privateText = state.drafts.get(player.id) ?? baseText;
+      const defaultHtml = encodedDefault;
+      const privateHtml = toChatHtml(privateText);
+      const usePrivate = state.selected.has(player.id);
+      const visibleHtml = chooseVisibleHtml({ defaultHtml, privateHtml, usePrivate });
+
+      await createPlayerSlotMessage({
+        batchId,
+        player,
+        defaultHtml,
+        privateHtml,
+        visibleHtml
+      });
     }
   } catch (error) {
     console.error(`${MODULE_ID} | 메시지 전송 실패`, error);
@@ -276,15 +344,63 @@ async function onBaseChatKeyDown(event) {
   }
 }
 
-async function sendWhisper(recipientIds, text, targetName) {
+async function createGmSummaryMessage({ batchId, defaultHtml }) {
   const cls = ChatMessage.implementation ?? ChatMessage;
-  const content = escapeHtml(text).replace(/\n/g, "<br>");
+  const chatData = baseChatData({
+    content: defaultHtml || "&nbsp;",
+    whisper: getGmIds(),
+    flags: {
+      [FLAG_SCOPE]: {
+        batchId,
+        kind: "gm-summary",
+        managed: true,
+        schemaVersion: SCHEMA_VERSION
+      }
+    }
+  });
+
+  await cls.create(chatData);
+}
+
+async function createPlayerSlotMessage({ batchId, player, defaultHtml, privateHtml, visibleHtml }) {
+  const cls = ChatMessage.implementation ?? ChatMessage;
+  const chatData = baseChatData({
+    content: visibleHtml,
+    whisper: [player.id],
+    flags: {
+      [FLAG_SCOPE]: {
+        batchId,
+        kind: "player-slot",
+        targetUserId: player.id,
+        managed: true,
+        schemaVersion: SCHEMA_VERSION,
+        defaultHtml,
+        privateHtml
+      }
+    }
+  });
+
+  await cls.create(chatData);
+
+  Hooks.callAll(`${MODULE_ID}.sent`, {
+    recipients: [player.id],
+    targetName: player.name,
+    batchId,
+    targetUserId: player.id,
+    defaultHtml,
+    privateHtml
+  });
+}
+
+function baseChatData({ content, whisper, flags }) {
+  const cls = ChatMessage.implementation ?? ChatMessage;
   const chatData = {
     user: game.user.id,
     speaker: cls.getSpeaker(),
     content,
-    whisper: recipientIds,
-    sound: CONFIG.sounds.notification
+    whisper,
+    sound: CONFIG.sounds.notification,
+    flags
   };
 
   if (CONST.CHAT_MESSAGE_STYLES?.OOC !== undefined) {
@@ -292,14 +408,62 @@ async function sendWhisper(recipientIds, text, targetName) {
     delete chatData.speaker;
   }
 
-  await cls.create(chatData);
+  return chatData;
+}
 
-  // 로그 추적용 훅. 다른 모듈에서 필요하면 이 훅만 받아도 된다.
-  Hooks.callAll(`${MODULE_ID}.sent`, {
-    recipients: recipientIds,
-    targetName,
-    text
+function queueContentSync(targetUserId = null) {
+  state.historySyncChain = state.historySyncChain
+    .catch(error => console.error(`${MODULE_ID} | 이전 로그 내용 동기화 실패`, error))
+    .then(() => synchronizeStoredMessageContent(targetUserId));
+  return state.historySyncChain;
+}
+
+async function synchronizeStoredMessageContent(targetUserId = null) {
+  if (!game.user?.isGM || state.syncingHistory) return;
+
+  const slots = Array.from(game.messages ?? []).filter(message => {
+    const flags = message.flags?.[FLAG_SCOPE];
+    if (flags?.schemaVersion !== SCHEMA_VERSION || flags?.kind !== "player-slot") return false;
+    if (!flags.targetUserId) return false;
+    return targetUserId ? flags.targetUserId === targetUserId : true;
   });
+  if (!slots.length) return;
+
+  state.syncingHistory = true;
+  try {
+    // game.messages 순서를 그대로 순회한다. update는 content 하나만 바꾸며
+    // whisper, id, timestamp, sort, speaker, flags를 전혀 수정하지 않는다.
+    for (const message of slots) {
+      const flags = message.flags?.[FLAG_SCOPE];
+      const usePrivate = state.selected.has(flags.targetUserId);
+      const desired = chooseVisibleHtml({
+        defaultHtml: flags.defaultHtml ?? "",
+        privateHtml: flags.privateHtml ?? "",
+        usePrivate
+      });
+
+      if ((message.content ?? "") === desired) continue;
+      await message.update(
+        { content: desired },
+        { splitPlayerChatContentSwap: true }
+      );
+    }
+  } finally {
+    state.syncingHistory = false;
+  }
+}
+
+function chooseVisibleHtml({ defaultHtml, privateHtml, usePrivate }) {
+  if (usePrivate && privateHtml) return privateHtml;
+  if (defaultHtml) return defaultHtml;
+  if (privateHtml) return privateHtml;
+  return "&nbsp;";
+}
+
+function toChatHtml(value) {
+  const text = String(value ?? "");
+  if (!text.length) return "";
+  return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
 function escapeHtml(value) {
