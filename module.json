@@ -7,9 +7,9 @@
     "verified": "0"
   },
   "esmodules": [
-    "scripts/main.js"
+    "scripts/split-player-chat.mjs"
   ],
   "styles": [
-    "styles/main.css"
+    "styles/split-player-chat.css"
   ]
 }

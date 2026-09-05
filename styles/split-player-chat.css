@@ -1,0 +1,151 @@
+#split-player-chat-root.spc-root {
+  position: fixed;
+  left: 50%;
+  bottom: 92px;
+  transform: translateX(-50%);
+  z-index: 70;
+  box-sizing: border-box;
+  width: min(760px, calc(100vw - 460px));
+  min-width: 320px;
+  max-height: min(44vh, 430px);
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  background: rgba(20, 20, 24, 0.88);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(5px);
+  color: var(--color-text-light-highlight, #f0f0e0);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+#split-player-chat-root .spc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+#split-player-chat-root .spc-title {
+  font-weight: 700;
+}
+
+#split-player-chat-root .spc-help {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.65;
+  font-size: 11px;
+}
+
+#split-player-chat-root .spc-players {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 10px;
+}
+
+#split-player-chat-root .spc-player {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 180px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#split-player-chat-root .spc-player input[type="checkbox"] {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+#split-player-chat-root .spc-player-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#split-player-chat-root .spc-status {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: #666;
+}
+
+#split-player-chat-root .spc-status.is-active {
+  background: #4caf50;
+  box-shadow: 0 0 4px rgba(76, 175, 80, 0.8);
+}
+
+#split-player-chat-root .spc-inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 6px;
+  max-height: min(31vh, 300px);
+  margin-top: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+#split-player-chat-root.has-private-inputs .spc-inputs {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#split-player-chat-root .spc-input-card {
+  min-width: 0;
+}
+
+#split-player-chat-root .spc-input-label {
+  margin: 0 0 3px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+#split-player-chat-root textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 50px;
+  max-height: 110px;
+  resize: vertical;
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.28);
+  color: inherit;
+  line-height: 1.3;
+}
+
+#split-player-chat-root .spc-empty {
+  opacity: 0.65;
+  font-size: 12px;
+}
+
+/* 화면 폭이 좁으면 우측 사이드바를 가정한 여백을 버리고 뷰포트 안에 강제로 맞춘다. */
+@media (max-width: 980px) {
+  #split-player-chat-root.spc-root {
+    width: calc(100vw - 24px);
+    min-width: 0;
+    bottom: 84px;
+  }
+}
+
+/* 세로 공간이 부족할 때 기존 하단 UI를 밀지 않고 패널 내부만 스크롤한다. */
+@media (max-height: 700px) {
+  #split-player-chat-root.spc-root {
+    max-height: 36vh;
+    bottom: 74px;
+  }
+
+  #split-player-chat-root .spc-inputs {
+    max-height: 22vh;
+  }
+}
