@@ -1,4 +1,4 @@
-#split-player-chat-root.spc-root {
+.spc-root {
   position: fixed;
   left: 50%;
   bottom: 92px;
@@ -19,7 +19,7 @@
   pointer-events: auto;
 }
 
-#split-player-chat-root .spc-header {
+ .spc-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -28,11 +28,11 @@
   white-space: nowrap;
 }
 
-#split-player-chat-root .spc-title {
+ .spc-title {
   font-weight: 700;
 }
 
-#split-player-chat-root .spc-help {
+ .spc-help {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -40,14 +40,14 @@
   font-size: 11px;
 }
 
-#split-player-chat-root .spc-players {
+ .spc-players {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 5px 10px;
 }
 
-#split-player-chat-root .spc-player {
+ .spc-player {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -56,18 +56,18 @@
   user-select: none;
 }
 
-#split-player-chat-root .spc-player input[type="checkbox"] {
+ .spc-player input[type="checkbox"] {
   flex: 0 0 auto;
   margin: 0;
 }
 
-#split-player-chat-root .spc-player-name {
+ .spc-player-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-#split-player-chat-root .spc-status {
+ .spc-status {
   width: 7px;
   height: 7px;
   flex: 0 0 7px;
@@ -75,12 +75,12 @@
   background: #666;
 }
 
-#split-player-chat-root .spc-status.is-active {
+ .spc-status.is-active {
   background: #4caf50;
   box-shadow: 0 0 4px rgba(76, 175, 80, 0.8);
 }
 
-#split-player-chat-root .spc-inputs {
+ .spc-inputs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 6px;
@@ -90,17 +90,17 @@
   overflow-x: hidden;
 }
 
-#split-player-chat-root.has-private-inputs .spc-inputs {
+.has-private-inputs .spc-inputs {
   margin-top: 7px;
   padding-top: 7px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-#split-player-chat-root .spc-input-card {
+ .spc-input-card {
   min-width: 0;
 }
 
-#split-player-chat-root .spc-input-label {
+ .spc-input-label {
   margin: 0 0 3px 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -109,7 +109,7 @@
   opacity: 0.85;
 }
 
-#split-player-chat-root textarea {
+ textarea {
   box-sizing: border-box;
   width: 100%;
   min-height: 50px;
@@ -124,14 +124,14 @@
   line-height: 1.3;
 }
 
-#split-player-chat-root .spc-empty {
+ .spc-empty {
   opacity: 0.65;
   font-size: 12px;
 }
 
 /* 화면 폭이 좁으면 우측 사이드바를 가정한 여백을 버리고 뷰포트 안에 강제로 맞춘다. */
 @media (max-width: 980px) {
-  #split-player-chat-root.spc-root {
+  .spc-root {
     width: calc(100vw - 24px);
     min-width: 0;
     bottom: 84px;
@@ -140,12 +140,77 @@
 
 /* 세로 공간이 부족할 때 기존 하단 UI를 밀지 않고 패널 내부만 스크롤한다. */
 @media (max-height: 700px) {
-  #split-player-chat-root.spc-root {
+  .spc-root {
     max-height: 36vh;
     bottom: 74px;
   }
 
-  #split-player-chat-root .spc-inputs {
+   .spc-inputs {
     max-height: 22vh;
   }
+}
+
+
+/* 플레이어용 분기 로그가 공용/개인 내용으로 바뀌는 동안 덮는 노이즈 연출.
+   레이아웃에는 영향을 주지 않고 기존 채팅 카드 내부만 가린다. */
+.chat-message.spc-player-visible-message {
+  position: relative;
+  overflow: hidden;
+}
+
+.chat-message.spc-player-visible-message.spc-noise-transition::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0.96;
+  background-image: url("/modules/fvtt-illusion-chat/assets/noise.png");
+  background-repeat: repeat;
+  background-size: 128px 128px;
+  mix-blend-mode: normal;
+  animation: spc-noise-jitter 80ms steps(2, end) infinite;
+}
+
+@keyframes spc-noise-jitter {
+  0%   { background-position:   0px   0px; transform: translate(0, 0); }
+  20%  { background-position: -31px  17px; transform: translate(-1px, 1px); }
+  40%  { background-position:  43px -29px; transform: translate(1px, -1px); }
+  60%  { background-position: -19px -47px; transform: translate(0, 1px); }
+  80%  { background-position:  57px  11px; transform: translate(1px, 0); }
+  100% { background-position: -53px  39px; transform: translate(-1px, -1px); }
+}
+
+/* 실제 DOM 오버레이 방식. Foundry가 메시지 element를 다시 만들더라도 renderChatMessage에서 재삽입한다. */
+.chat-message.spc-noise-host,
+.message.spc-noise-host {
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.chat-message > .spc-noise-overlay,
+.message > .spc-noise-overlay {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 999 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 100% !important;
+  min-height: 100% !important;
+  pointer-events: none !important;
+  opacity: 1 !important;
+  background-color: #777 !important;
+  background-image: url("/modules/fvtt-illusion-chat/assets/noise.png") !important;
+  background-repeat: repeat !important;
+  background-size: 128px 128px !important;
+  animation: spc-noise-overlay-jitter 70ms steps(2, end) infinite !important;
+}
+
+@keyframes spc-noise-overlay-jitter {
+  0%   { background-position: 0 0; }
+  25%  { background-position: -37px 23px; }
+  50%  { background-position: 41px -31px; }
+  75%  { background-position: -21px -49px; }
+  100% { background-position: 59px 17px; }
 }

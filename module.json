@@ -6,10 +6,11 @@
     "minimum": "0",
     "verified": "0"
   },
+  "socket": true,
   "esmodules": [
-    "scripts/split-player-chat.mjs"
+    "scripts/fvtt-illusion-chat.mjs"
   ],
   "styles": [
-    "styles/split-player-chat.css"
+    "styles/fvtt-illusion-chat.css"
   ]
 }

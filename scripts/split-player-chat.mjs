@@ -1,4 +1,4 @@
-const MODULE_ID = "split-player-chat";
+const MODULE_ID = "fvtt-illusion-chat";
 const FLAG_SCOPE = MODULE_ID;
 const SCHEMA_VERSION = 3;
 
@@ -13,7 +13,10 @@ const state = {
   baseInputHandler: null,
   sending: false,
   syncingHistory: false,
-  historySyncChain: Promise.resolve()
+  historySyncChain: Promise.resolve(),
+  noiseTimers: new Map(),
+  activeNoiseMessageIds: new Set(),
+  pendingNoiseAcks: new Map()
 };
 
 Hooks.once("init", () => {
@@ -23,10 +26,36 @@ Hooks.once("init", () => {
     type: Object,
     default: { ids: [] }
   });
+  console.log("=========================");
+  console.log("origin:", location.origin);
+  console.log("href:", location.href);
+
+  // fetch(new URL(
+  //   "http://192.168.56.1:30000//modules/fvtt-illusion-chat/assets/noise.png",
+  //   location.origin
+  // )).then(async r => {
+  //   console.log("NOISE", r.status, r.url);
+  // });
+  console.log("=========================");
 });
 
 Hooks.once("ready", async () => {
-  if (!game.user.isGM) return;
+  console.log("Hooks");
+  registerNoiseSocket();
+  if (!game.user.isGM) 
+    return;
+
+  // const d = document.createElement("div");
+
+  // Object.assign(d.style, {
+  //   position: "fixed",
+  //   inset: "0",
+  //   zIndex: "2147483647",
+  //   background: "rgba(255, 0, 255, 0.7)",
+  //   pointerEvents: "none"
+  // });
+  // d.textContent = "OVERLAY TEST";
+  // document.body.appendChild(d);
 
   const saved = game.settings.get(MODULE_ID, "selectedPlayers") ?? { ids: [] };
   state.selected = new Set(Array.isArray(saved.ids) ? saved.ids : []);
@@ -62,7 +91,175 @@ Hooks.on("renderChatMessage", (message, html) => {
   element.classList.remove("whisper");
   element.classList.add("spc-player-visible-message");
   element.querySelectorAll(".whisper-to").forEach(node => node.remove());
+
+  // content update로 Foundry가 메시지 DOM을 다시 만들어도 전환 중이라면
+  // 새 요소에 즉시 노이즈를 다시 씌워 내용 교체 순간이 노출되지 않게 한다.
+  if (state.activeNoiseMessageIds.has(message.id)) {
+    ensureNoiseOverlay(element);
+  }
 });
+
+
+function registerNoiseSocket() {
+  console.log("registerNoiseSocket");
+  console.log(game.socket);
+  console.log(`module.${MODULE_ID}`); 
+  game.socket.on(`module.${MODULE_ID}`, async payload => {
+    if (!payload){
+      console.log("payload fail");
+      return;
+    } 
+
+    // 플레이어가 실제 DOM에 노이즈를 씌운 뒤 보내는 확인 신호.
+    if (payload.type === "noise-transition-ack") {
+      if (!game.user?.isGM) return;
+      const resolver = state.pendingNoiseAcks.get(payload.transitionId);
+      if (resolver) {
+        state.pendingNoiseAcks.delete(payload.transitionId);
+        resolver(true);
+      }
+      return;
+    }
+
+    if (payload.type !== "noise-transition")
+      return;
+    if (payload.targetUserId !== game.user?.id){
+      console.log(payload.targetUserId);
+      console.log(game.user?.id);
+      return;
+    }
+
+    const messageIds = Array.isArray(payload.messageIds) ? payload.messageIds : [];
+
+    if (payload.phase === "start") {
+      showNoiseOverlay(messageIds);
+      console.log("showNoiseOverlay");
+
+      // 두 프레임을 기다려 브라우저가 실제 오버레이를 레이아웃/페인트할 기회를 준다.
+      await nextAnimationFrame();
+      await nextAnimationFrame();
+
+      game.socket.emit(`module.${MODULE_ID}`, {
+        type: "noise-transition-ack",
+        transitionId: payload.transitionId,
+        sourceUserId: game.user.id
+      });
+    } else if (payload.phase === "stop") {
+      hideNoiseOverlay(messageIds);
+      console.log("hideNoiseOverlay");
+    }
+  });
+}
+
+function emitNoiseTransition({ targetUserId, messageIds, phase, transitionId = null }) {
+  if (!game.user?.isGM || !targetUserId || !messageIds?.length) return;
+  console.log("EMIT CALLED", {
+    targetUserId,
+    messageIds,
+    phase,
+    transitionId
+  });
+
+  if (!game.user?.isGM || !targetUserId || !messageIds?.length) {
+    console.log("EMIT BLOCKED");
+    return;
+  }
+
+  console.log("SOCKET EMIT");
+  game.socket.emit(`module.${MODULE_ID}`, {
+    type: "noise-transition",
+    targetUserId,
+    messageIds,
+    phase,
+    transitionId
+  });
+}
+
+function makeTransitionId(userId) {
+  return `${Date.now()}-${userId}-${Math.random().toString(36).slice(2)}`;
+}
+
+function waitForNoiseAck(transitionId, timeoutMs = 1200) {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      state.pendingNoiseAcks.delete(transitionId);
+      resolve(false);
+    }, timeoutMs);
+
+    state.pendingNoiseAcks.set(transitionId, ok => {
+      clearTimeout(timer);
+      resolve(ok);
+    });
+  });
+}
+
+function nextAnimationFrame() {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
+function showNoiseOverlay(messageIds) {
+  for (const messageId of messageIds) {
+    state.activeNoiseMessageIds.add(messageId);
+
+    for (const element of findChatMessageElements(messageId)) {
+      ensureNoiseOverlay(element);
+    }
+
+    const oldTimer = state.noiseTimers.get(messageId);
+    if (oldTimer) clearTimeout(oldTimer);
+
+    // stop 패킷을 놓쳐도 영구히 가려지지 않도록 안전장치를 둔다.
+    const timer = setTimeout(() => {
+      state.activeNoiseMessageIds.delete(messageId);
+      removeNoiseOverlays(messageId);
+      state.noiseTimers.delete(messageId);
+    }, 2200);
+    state.noiseTimers.set(messageId, timer);
+  }
+}
+
+function hideNoiseOverlay(messageIds) {
+  for (const messageId of messageIds) {
+    state.activeNoiseMessageIds.delete(messageId);
+
+    // 교체된 본문이 DOM에 반영될 한 프레임을 준 뒤 현재 DOM에서 노이즈를 걷는다.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => removeNoiseOverlays(messageId));
+    });
+
+    const timer = state.noiseTimers.get(messageId);
+    if (timer) clearTimeout(timer);
+    state.noiseTimers.delete(messageId);
+  }
+}
+
+function findChatMessageElements(messageId) {
+  if (!messageId) return [];
+  const escaped = CSS.escape(messageId);
+  return Array.from(document.querySelectorAll(`.message[data-message-id="${escaped}"], .chat-message[data-message-id="${escaped}"]`));
+}
+
+function ensureNoiseOverlay(element) {
+  if (!(element instanceof HTMLElement)) return;
+  element.classList.add("spc-noise-host");
+  if (element.querySelector(":scope > .spc-noise-overlay")) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "spc-noise-overlay";
+  overlay.setAttribute("aria-hidden", "true");
+  element.appendChild(overlay);
+}
+
+function removeNoiseOverlays(messageId) {
+  for (const element of findChatMessageElements(messageId)) {
+    element.querySelectorAll(":scope > .spc-noise-overlay").forEach(node => node.remove());
+    element.classList.remove("spc-noise-host");
+  }
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 Hooks.on("createUser", refreshPlayers);
 Hooks.on("updateUser", refreshPlayers);
@@ -431,8 +628,7 @@ async function synchronizeStoredMessageContent(targetUserId = null) {
 
   state.syncingHistory = true;
   try {
-    // game.messages 순서를 그대로 순회한다. update는 content 하나만 바꾸며
-    // whisper, id, timestamp, sort, speaker, flags를 전혀 수정하지 않는다.
+    const changes = [];
     for (const message of slots) {
       const flags = message.flags?.[FLAG_SCOPE];
       const usePrivate = state.selected.has(flags.targetUserId);
@@ -441,12 +637,61 @@ async function synchronizeStoredMessageContent(targetUserId = null) {
         privateHtml: flags.privateHtml ?? "",
         usePrivate
       });
-
       if ((message.content ?? "") === desired) continue;
+      changes.push({ message, desired, targetUserId: flags.targetUserId });
+    }
+    if (!changes.length) return;
+
+    // 체크 하나의 전환에서는 해당 플레이어에게 실제로 바뀔 기존 로그들을 먼저 가린다.
+    // 전체 동기화일 경우 플레이어별로 묶어서 각 클라이언트에 자기 메시지 ID만 전달한다.
+    const byTarget = new Map();
+    for (const change of changes) {
+      const list = byTarget.get(change.targetUserId) ?? [];
+      list.push(change.message.id);
+      byTarget.set(change.targetUserId, list);
+    }
+
+    // 1) 먼저 대상 플레이어의 실제 DOM에 가림막을 씌운다.
+    // 플레이어가 두 프레임 뒤 ACK를 보내기 전에는 절대로 본문을 수정하지 않는다.
+    const transitions = [];
+    for (const [userId, messageIds] of byTarget) {
+      const transitionId = makeTransitionId(userId);
+      const ackPromise = waitForNoiseAck(transitionId);
+      transitions.push({ userId, messageIds, transitionId, ackPromise });
+      emitNoiseTransition({
+        targetUserId: userId,
+        messageIds,
+        phase: "start",
+        transitionId
+      });
+    }
+
+    await Promise.all(transitions.map(item => item.ackPromise));
+
+    // ACK 이후 최소 0.5초 동안 노이즈를 유지한다.
+    await delay(500);
+
+    // 2) 가려진 상태에서 같은 ChatMessage의 content만 제자리에서 수정한다.
+    // whisper, id, timestamp, sort, speaker, flags는 전혀 수정하지 않는다.
+    for (const { message, desired } of changes) {
       await message.update(
         { content: desired },
         { splitPlayerChatContentSwap: true }
       );
+    }
+
+    // 플레이어 쪽 updateChatMessage/renderChatMessage가 도착해 새 DOM에도
+    // activeNoiseMessageIds 기반 오버레이가 다시 붙을 여유를 준다.
+    await delay(180);
+
+    // 3) 본문 수정 이후에만 가림막을 제거한다.
+    for (const { userId, messageIds, transitionId } of transitions) {
+      emitNoiseTransition({
+        targetUserId: userId,
+        messageIds,
+        phase: "stop",
+        transitionId
+      });
     }
   } finally {
     state.syncingHistory = false;
