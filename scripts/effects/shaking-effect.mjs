@@ -1,14 +1,13 @@
 import {
     findChatMessageElements,
-    ensureHost,
-    cleanupHostIfEmpty
+    ensureHost
 } from "./effect-dom.mjs";
 // 상위 스크립트에서 사용하는 변수
 
 // 객체 생성
 export const shakingEffect = {
     start(context){
-        context.clones ??= [];
+        context.targets ??= [];
         
         for (const messageId of context.messageIds){
             for (const element of findChatMessageElements(messageId)){
@@ -23,11 +22,11 @@ export const shakingEffect = {
     stop(context){
         cancelAnimationFrame(context.animationId);
 
-        for (const clone of context.clones) {
-            clone.element.remove();
+        for (const target of context.targets) {
+            target.element.style.transform = target.originalTransform;
         }
 
-        context.clones = [];
+        context.targets = [];
     },
 
     applyToElement(element, context){
@@ -36,11 +35,11 @@ export const shakingEffect = {
 }
 
 function animate(context){
-    for (const clone of context.clones) {
+    for (const target of context.targets) {
         const x = (Math.random() - 0.5) * 6;
         const y = (Math.random() - 0.5) * 6;
 
-        clone.element.style.transform =
+        target.element.style.transform =
             `translate(${x}px, ${y}px)`;
     }
 
@@ -48,9 +47,6 @@ function animate(context){
 }
 
 function apply(element, context) {
-    if (!ensureHost(element))
-        return;
-
     if(element.querySelector(":scope > .spc-shake-clone"))
         return;
 
@@ -58,17 +54,13 @@ function apply(element, context) {
     if (!content)
         return;
 
-    content.style.position = "relative";
+    context.targets ??= [];
 
-    const clone = content.cloneNode(true);
-    
-    clone.classList.add("spc-shake-clone");
+    if (context.targets.some(target => target.element === content))
+        return;
 
-    content.appendChild(clone);
-
-    context.clones ??= [];
-    context.clones.push({
-        element: clone,
-        index: context.clones.length
+    context.targets.push({
+        element: content,
+        originalTransform: content.style.transform
     });
 }
