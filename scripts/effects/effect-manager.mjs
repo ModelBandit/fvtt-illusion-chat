@@ -3,6 +3,7 @@ import { waitForPaint } from "./effect-dom.mjs";
 import { noiseEffect } from "./noise-effect.mjs";
 import { binaryGlitchEffect } from "./binary-glitch-effect.mjs";
 import { rgbSplitEffect } from "./rgb-split-effect.mjs";
+import { shakingEffect } from "./shaking-effect.mjs";
 
 const EFFECTS = {
   none: {
@@ -12,7 +13,8 @@ const EFFECTS = {
   },
   noise: noiseEffect,
   binaryGlitch: binaryGlitchEffect,
-  rgbSplit: rgbSplitEffect
+  rgbSplit: rgbSplitEffect,
+  shaking: shakingEffect
 };
 
 class EffectManagerClass {
@@ -103,23 +105,28 @@ class EffectManagerClass {
 
   handleRenderChatMessage(message, element) {
     if (!message?.id || !(element instanceof HTMLElement)) return;
-    const active = this.activeMessageIds.get(message.id);
-    if (!active) return;
-    const transition = this.activeTransitions.get(active.transitionId);
-    if (!transition) return;
-    const effect = EFFECTS[active.effectType] ?? EFFECTS.noise;
-    effect.applyToElement?.(element, transition);
+    const activeEntries = this.activeMessageIds.get(message.id);
+    if (!activeEntries?.size) return;
+
+    for (const [transitionId, effectType] of activeEntries) {
+      const transition = this.activeTransitions.get(transitionId);
+      if (!transition) continue;
+      const effect = EFFECTS[effectType];
+      effect?.applyToElement?.(element, transition);
+    }
   }
 
   handleUpdateChatMessage(message) {
     if (!message?.id) return;
-    const active = this.activeMessageIds.get(message.id);
-    if (!active) return;
+    const activeEntries = this.activeMessageIds.get(message.id);
+    if (!activeEntries?.size) return;
 
-    const transition = this.activeTransitions.get(active.transitionId);
-    if (!transition) return;
-    transition.updatedIds.add(message.id);
-    this.#finishDeferredStopIfReady(transition);
+    for (const [transitionId] of activeEntries) {
+      const transition = this.activeTransitions.get(transitionId);
+      if (!transition) continue;
+      transition.updatedIds.add(message.id);
+      this.#finishDeferredStopIfReady(transition);
+    }
   }
 
   async #handlePlayerStart(payload) {
@@ -140,10 +147,7 @@ class EffectManagerClass {
 
     this.activeTransitions.set(payload.transitionId, transition);
     for (const messageId of messageIds) {
-      this.activeMessageIds.set(messageId, {
-        transitionId: payload.transitionId,
-        effectType
-      });
+      this.#registerActiveMessage(messageId, payload.transitionId, effectType);
     }
 
     try {
@@ -157,10 +161,7 @@ class EffectManagerClass {
         console.error(`${MODULE_ID} | binary effect start failed; continuing without visual effect`, error);
         transition.effectType = "none";
         for (const messageId of messageIds) {
-          this.activeMessageIds.set(messageId, {
-            transitionId: payload.transitionId,
-            effectType: "none"
-          });
+          this.#registerActiveMessage(messageId, payload.transitionId, "none");
         }
         this.#ack(payload.transitionId, "start", false);
       } else {
@@ -168,10 +169,7 @@ class EffectManagerClass {
         try {
           transition.effectType = "noise";
           for (const messageId of messageIds) {
-            this.activeMessageIds.set(messageId, {
-              transitionId: payload.transitionId,
-              effectType: "noise"
-            });
+            this.#registerActiveMessage(messageId, payload.transitionId, "noise");
           }
           EFFECTS.noise.start(transition);
           await waitForPaint();
@@ -228,9 +226,20 @@ class EffectManagerClass {
     if (transition.stopRequested) this.#ack(transition.transitionId, "stop", true);
     this.activeTransitions.delete(transition.transitionId);
     for (const messageId of transition.messageIds) {
-      const active = this.activeMessageIds.get(messageId);
-      if (active?.transitionId === transition.transitionId) this.activeMessageIds.delete(messageId);
+      const activeEntries = this.activeMessageIds.get(messageId);
+      if (!activeEntries) continue;
+      activeEntries.delete(transition.transitionId);
+      if (!activeEntries.size) this.activeMessageIds.delete(messageId);
     }
+  }
+
+  #registerActiveMessage(messageId, transitionId, effectType) {
+    let activeEntries = this.activeMessageIds.get(messageId);
+    if (!activeEntries) {
+      activeEntries = new Map();
+      this.activeMessageIds.set(messageId, activeEntries);
+    }
+    activeEntries.set(transitionId, effectType);
   }
 
   #allUpdated(transition) {
