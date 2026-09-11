@@ -7,7 +7,8 @@ import {
 // 객체 생성
 export const shakingEffect = {
     start(context){
-        context.targets ??= [];
+        context.clones ??= [];
+        context.cloneCount = 2;
         
         for (const messageId of context.messageIds){
             for (const element of findChatMessageElements(messageId)){
@@ -22,8 +23,13 @@ export const shakingEffect = {
     stop(context){
         cancelAnimationFrame(context.animationId);
 
-        for (const target of context.targets) {
-            target.element.style.transform = target.originalTransform;
+        for (const clone of context.clones) {
+            if(clone.isOriginal === true){
+                clone.element.style.transform = clone.originalTransform;
+            }
+            else{
+                clone.element.remove();
+            }
         }
 
         context.targets = [];
@@ -35,9 +41,9 @@ export const shakingEffect = {
 }
 
 function animate(context){
-    for (const target of context.targets) {
-        const x = (Math.random() - 0.5) * 6;
-        const y = (Math.random() - 0.5) * 6;
+    for (const clone of context.clones) {
+        const x = (Math.random()-0.5) * 6;
+        const y =  (Math.random()-0.5) * 6;
 
         target.element.style.transform =
             `translate(${x}px, ${y}px)`;
@@ -47,7 +53,10 @@ function animate(context){
 }
 
 function apply(element, context) {
-    if(element.querySelector(":scope > .spc-shake-clone"))
+    if (!ensureHost(element))
+        return;
+    
+    if (element.querySelector(".spc-shake-clone"))
         return;
 
     const content = element.querySelector(".message-content");
@@ -56,11 +65,30 @@ function apply(element, context) {
 
     context.targets ??= [];
 
-    if (context.targets.some(target => target.element === content))
-        return;
-
-    context.targets.push({
+    context.clones ??= [];
+    context.clones.push({
         element: content,
+        index: 0,
+        isOriginal: true,
         originalTransform: content.style.transform
     });
+
+    for(let i = 0; i < context.cloneCount; ++i){
+
+        const clone = content.cloneNode(true);
+
+        clone.style.transform = content.style.transform;
+        
+        clone.style.position = "absolute";
+        clone.style.inset = "0";
+
+        clone.classList.add("spc-shake-clone");
+        content.appendChild(clone);
+
+        context.clones.push({
+            element: clone,
+            index: context.clones.length,
+            isOriginal: false
+        });
+    }
 }
