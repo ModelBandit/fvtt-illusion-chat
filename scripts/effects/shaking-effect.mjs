@@ -9,6 +9,7 @@ import {
 export const shakingEffect = {
     start(context){
         context.clones ??= [];
+        context.cloneCount = 3;
         
         for (const messageId of context.messageIds){
             for (const element of findChatMessageElements(messageId)){
@@ -24,6 +25,8 @@ export const shakingEffect = {
         cancelAnimationFrame(context.animationId);
 
         for (const clone of context.clones) {
+            if(clone.isOriginal == true)
+                continue;
             clone.element.remove();
         }
 
@@ -60,15 +63,24 @@ function apply(element, context) {
 
     content.style.position = "relative";
 
-    const clone = content.cloneNode(true);
-    
-    clone.classList.add("spc-shake-clone");
-
-    content.appendChild(clone);
 
     context.clones ??= [];
     context.clones.push({
-        element: clone,
-        index: context.clones.length
+        element: content,
+        index: 0,
+        isOriginal: true
     });
+
+    for(let i = 0; i < context.cloneCount; ++i){
+        const clone = content.cloneNode(true);
+        
+        clone.classList.add("spc-shake-clone");
+
+        content.appendChild(clone);
+
+        context.clones.push({
+            element: clone,
+        index: context.clones.length
+        });
+    }
 }
