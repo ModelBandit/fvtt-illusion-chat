@@ -14,6 +14,7 @@ function makeTransitionId(userId) {
 function htmlToPlainText(html = "") {
   const wrapper = document.createElement("div");
   wrapper.innerHTML = String(html);
+  wrapper.querySelectorAll("br").forEach(br => br.replaceWith("\n"));
   return wrapper.textContent ?? "";
 }
 
@@ -132,6 +133,7 @@ export class ChatTransitionController {
       changes.push({
         message,
         desired,
+        baseHtml: flags.defaultHtml || desired || message.content || "&nbsp;",
         targetUserId: flags.targetUserId
       });
     }
@@ -148,7 +150,11 @@ export class ChatTransitionController {
       entry.messageIds.push(change.message.id);
       entry.messageTransitions[change.message.id] = {
         sourceText: htmlToPlainText(change.message.content ?? ""),
-        targetText: htmlToPlainText(change.desired ?? "")
+        targetText: htmlToPlainText(change.desired ?? ""),
+        sourceHtml: change.message.content ?? "",
+        targetHtml: change.desired ?? "",
+        baseText: htmlToPlainText(change.baseHtml ?? ""),
+        baseHtml: change.baseHtml ?? ""
       };
       byTarget.set(change.targetUserId, entry);
     }

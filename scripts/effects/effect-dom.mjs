@@ -6,10 +6,6 @@ export function findChatMessageElements(messageId) {
   ));
 }
 
-export function getMessageElement(messageId) {
-  return findChatMessageElements(messageId)[0] ?? null;
-}
-
 export function ensureHost(element) {
   if (!(element instanceof HTMLElement)) return false;
   element.classList.add("spc-effect-host");

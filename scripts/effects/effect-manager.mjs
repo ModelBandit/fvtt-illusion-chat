@@ -137,7 +137,9 @@ class EffectManagerClass {
       targetUserId: payload.targetUserId,
       messageIds,
       effectType,
-      duration: Math.max(1, Number(payload.duration) || 500),
+      duration: Number.isFinite(Number(payload.duration))
+        ? Math.max(0, Number(payload.duration))
+        : 500,
       messageTransitions: payload.messageTransitions ?? {},
       updatedIds: new Set(),
       commitRequested: false,
@@ -159,6 +161,7 @@ class EffectManagerClass {
       // 대체하지 않고 효과 없이 content 교체만 계속 진행한다.
       if (effectType === "binaryGlitch") {
         console.error(`${MODULE_ID} | binary effect start failed; continuing without visual effect`, error);
+        try { EFFECTS.binaryGlitch.stop(transition); } catch {}
         transition.effectType = "none";
         for (const messageId of messageIds) {
           this.#registerActiveMessage(messageId, payload.transitionId, "none");
@@ -167,6 +170,7 @@ class EffectManagerClass {
       } else {
         console.error(`${MODULE_ID} | effect start failed; falling back to noise`, error);
         try {
+          try { EFFECTS[effectType]?.stop?.(transition); } catch {}
           transition.effectType = "noise";
           for (const messageId of messageIds) {
             this.#registerActiveMessage(messageId, payload.transitionId, "noise");

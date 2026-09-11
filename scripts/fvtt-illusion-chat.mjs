@@ -64,7 +64,7 @@ Hooks.on("renderChatMessage", (message, html) => {
   if (!(element instanceof HTMLElement)) return;
 
   if (game.user?.isGM) {
-    element.style.display = "none";
+    renderGmPrivatePreview(element, flags);
     return;
   }
   if (flags.targetUserId !== game.user?.id) return;
@@ -76,8 +76,43 @@ Hooks.on("renderChatMessage", (message, html) => {
 });
 
 Hooks.on("updateChatMessage", message => {
-  if (!game.user?.isGM) EffectManager.handleUpdateChatMessage(message);
+  if (!game.user?.isGM) {
+    EffectManager.handleUpdateChatMessage(message);
+    return;
+  }
+
+  const flags = message.flags?.[FLAG_SCOPE];
+  if (flags?.schemaVersion !== SCHEMA_VERSION || flags?.kind !== "player-slot" || !flags?.managed) return;
+
+  queueMicrotask(() => {
+    for (const element of document.querySelectorAll(`[data-message-id="${message.id}"]`)) {
+      if (element instanceof HTMLElement) renderGmPrivatePreview(element, flags);
+    }
+  });
 });
+
+function renderGmPrivatePreview(element, flags) {
+  const defaultHtml = flags.defaultHtml ?? "";
+  const privateHtml = flags.privateHtml ?? "";
+
+  // GM summary가 원본 문자열을 이미 출력하므로, 실제로 다른 환상 문자열만 추가 출력한다.
+  if (!privateHtml || privateHtml === defaultHtml) {
+    element.style.display = "none";
+    return;
+  }
+
+  const contentElement =
+    element.querySelector(".message-content")
+    ?? element.querySelector(".message-content-wrapper");
+
+  if (contentElement instanceof HTMLElement) {
+    // 문서 content는 플레이어용 현재 상태 그대로 두고 GM의 DOM만 환상 문자열로 덮는다.
+    contentElement.innerHTML = privateHtml;
+  }
+
+  element.style.removeProperty("display");
+  element.classList.add("spc-gm-private-preview");
+}
 
 function getPlayers() {
   return state.core?.getPlayers?.() ?? Array.from(game.users ?? []).filter(user => !user.isGM);

@@ -13,65 +13,10 @@
 @keyframes spc-noise-overlay-jitter { 0%{background-position:0 0}25%{background-position:-37px 23px}50%{background-position:41px -31px}75%{background-position:-21px -49px}100%{background-position:59px 17px} }
 .spc-binary-active { white-space:pre-wrap; overflow-wrap:anywhere; }
 
-.spc-rgb-overlay { 
-    overflow:hidden; 
-    background:rgba(20,20,24,.98); 
-}
-.spc-rgb-layer { 
-    position:absolute; 
-    inset:0; overflow:hidden; 
-    padding:inherit; background:rgba(20,20,24,.96); 
-    animation-duration:100ms; animation-timing-function:steps(2,end); 
-    animation-iteration-count:infinite; 
-}
-.spc-rgb-layer .spc-rgb-snapshot { 
-    margin:0; 
-}
-.spc-rgb-r { 
-    color:rgba(255,90,90,.95); 
-    transform:translate(-3px,0); 
-    clip-path:inset(0 0 58% 0); 
-    animation-name:spc-rgb-r-shift;
-}
-.spc-rgb-g { 
-    color:rgba(100,255,150,.95); 
-    transform:translate(2px,1px); 
-    clip-path:inset(28% 0 24% 0); 
-    animation-name:spc-rgb-g-shift; 
-}
-.spc-rgb-b { 
-    color:rgba(100,160,255,.95); 
-    transform:translate(4px,-1px); 
-    clip-path:inset(58% 0 0 0); 
-    animation-name:spc-rgb-b-shift; 
-}
-@keyframes spc-rgb-r-shift { 
-    0%{
-        transform:translate(-5px,0) 
-        skewX(-2deg)
-    }
-    50%{
-        transform:translate(2px,-1px) 
-        skewX(1deg)
-    }
-    100%{
-        transform:translate(-2px,1px) skewX(0)
-    } 
-}
-@keyframes spc-rgb-g-shift { 0%{transform:translate(3px,1px)}50%{transform:translate(-3px,0)}100%{transform:translate(1px,-1px)} }
-@keyframes spc-rgb-b-shift { 0%{transform:translate(5px,-1px) skewX(2deg)}50%{transform:translate(-1px,2px) skewX(-1deg)}100%{transform:translate(3px,0) skewX(0)} }
 #chat-message { color:#111; }
 
-.spc-shake-clone {
-    position: absolute;
-    left: 0;
-    top: 0;
 
-    width: 100%;
-    height: 100%;
 
-    pointer-events: none;
-}
 
 
 /* RGB Split: text-only mode. No covering overlay is created. */
@@ -79,6 +24,40 @@
   position: relative;
   z-index: auto;
   text-shadow:
-    -2px 0 rgba(255, 0, 0, 0.8),
-     2px 0 rgba(0, 255, 255, 0.8);
+    -4px 0 rgba(255, 0, 0, 0.8),
+     4px 0 rgba(0, 255, 255, 0.8);
+}
+
+/* Shake + RGB: keep the real text clean and render the split colors on absolute shadow clones. */
+.spc-shake-active {
+  position: relative;
+}
+
+.spc-shake-active.spc-rgb-text-active {
+  text-shadow: none;
+}
+
+.spc-shake-rgb-clone {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 1;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  pointer-events: none !important;
+  overflow: visible !important;
+  will-change: transform;
+}
+
+.spc-shake-rgb-clone,
+.spc-shake-rgb-clone * {
+  color: transparent !important;
+}
+
+.spc-shake-rgb-clone[data-spc-shake-rgb-clone="red"] {
+  text-shadow: -4px 0 rgba(255, 0, 0, 0.8) !important;
+}
+
+.spc-shake-rgb-clone[data-spc-shake-rgb-clone="cyan"] {
+  text-shadow: 4px 0 rgba(0, 255, 255, 0.8) !important;
 }
