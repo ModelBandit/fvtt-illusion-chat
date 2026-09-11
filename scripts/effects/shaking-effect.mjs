@@ -9,7 +9,7 @@ import {
 export const shakingEffect = {
     start(context){
         context.clones ??= [];
-        context.cloneCount = 3;
+        context.cloneCount = 2;
         
         for (const messageId of context.messageIds){
             for (const element of findChatMessageElements(messageId)){
@@ -25,9 +25,12 @@ export const shakingEffect = {
         cancelAnimationFrame(context.animationId);
 
         for (const clone of context.clones) {
-            if(clone.isOriginal == true)
-                continue;
-            clone.element.remove();
+            if(clone.isOriginal === true){
+                clone.element.style.transform = clone.originalTransform;
+            }
+            else{
+                clone.element.remove();
+            }
         }
 
         context.clones = [];
@@ -40,8 +43,8 @@ export const shakingEffect = {
 
 function animate(context){
     for (const clone of context.clones) {
-        const x = (Math.random() - 0.5) * 6;
-        const y = (Math.random() - 0.5) * 6;
+        const x = (Math.random()-0.5) * 6;
+        const y =  (Math.random()-0.5) * 6;
 
         clone.element.style.transform =
             `translate(${x}px, ${y}px)`;
@@ -53,8 +56,8 @@ function animate(context){
 function apply(element, context) {
     if (!ensureHost(element))
         return;
-
-    if(element.querySelector(":scope > .spc-shake-clone"))
+    
+    if (element.querySelector(".spc-shake-clone"))
         return;
 
     const content = element.querySelector(".message-content");
@@ -63,24 +66,30 @@ function apply(element, context) {
 
     content.style.position = "relative";
 
-
     context.clones ??= [];
     context.clones.push({
         element: content,
         index: 0,
-        isOriginal: true
+        isOriginal: true,
+        originalTransform: content.style.transform
     });
 
     for(let i = 0; i < context.cloneCount; ++i){
-        const clone = content.cloneNode(true);
-        
-        clone.classList.add("spc-shake-clone");
 
+        const clone = content.cloneNode(true);
+
+        clone.style.transform = content.style.transform;
+        
+        clone.style.position = "absolute";
+        clone.style.inset = "0";
+
+        clone.classList.add("spc-shake-clone");
         content.appendChild(clone);
 
         context.clones.push({
             element: clone,
-        index: context.clones.length
+            index: context.clones.length,
+            isOriginal: false
         });
     }
 }
