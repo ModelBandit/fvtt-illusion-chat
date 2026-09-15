@@ -50,7 +50,8 @@ export function registerHijackMessage({ getSelectedUserIds, localize } = {}) {
     });
 
     game.socket.emit(`module.${MODULE_ID}`, request);
-    ui.notifications?.info(localize?.("moderationQueued") ?? "moderationQueued");
+    // 플레이어 쪽에 뜨는 디버그용 코드
+    // ui.notifications?.info(localize?.("moderationQueued") ?? "moderationQueued");
   });
 }
 
