@@ -23,7 +23,7 @@ function t(textMap, key, replacements = {}) {
   return text;
 }
 
-export function registerSettings(core, textMap = {}) {
+export function registerSettings(textMap = {}) {
   for (const setting of EFFECT_SETTINGS) {
     game.settings.register(MODULE_ID, setting.key, {
       name: t(textMap, "settings.effectName", { name: t(textMap, `settings.${setting.labelKey}`) }),

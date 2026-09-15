@@ -39,7 +39,7 @@ Hooks.once("init", () => {
   state.textMap = state.textMap && Object.keys(state.textMap).length
     ? state.textMap
     : state.core?.getLanguageMap?.("chat") ?? {};
-  registerSettings(state.core, state.textMap);
+  registerSettings(state.textMap);
 });
 
 Hooks.once("ready", async () => {
