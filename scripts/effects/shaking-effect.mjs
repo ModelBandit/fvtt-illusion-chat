@@ -1,7 +1,5 @@
 import { findChatMessageElements } from "./effect-dom.mjs";
 
-const SHAKE_RANGE = 6;
-const SHADOW_RANGE = 3;
 const SHAKE_ACTIVE_CLASS = "spc-shake-active";
 const RGB_ACTIVE_CLASS = "spc-rgb-text-active";
 const RGB_CLONE_ATTR = "data-spc-shake-rgb-clone";
@@ -34,55 +32,25 @@ export const shakingEffect = {
   }
 };
 
-function getContentElement(element) {
-  if (!(element instanceof HTMLElement)) return null;
-
-  return element.querySelector(`.message-content:not([${RGB_CLONE_ATTR}])`)
-    ?? element.querySelector(`.message-content-wrapper:not([${RGB_CLONE_ATTR}])`)
-    ?? null;
-}
-
 function apply(element, context) {
-  const content = getContentElement(element);
-  if (!(content instanceof HTMLElement)) return;
-
   context.shakeTargets ??= new Map();
 
-  // 같은 실제 채팅 DOM은 한 번만 등록한다.
-  if (context.shakeTargets.has(content)) return;
+  for (const effectTarget of context.getEffectTargets(element)) {
+    const targetElement = effectTarget.element;
+    if (context.shakeTargets.has(targetElement)) continue;
 
-  const target = {
-    element: content,
-    originalTransform: content.style.transform,
-    originalWillChange: content.style.willChange,
-    rgbClones: []
-  };
-
-  context.shakeTargets.set(content, target);
-
-  // transform은 레이아웃 공간을 밀지 않는다.
-  content.classList.add(SHAKE_ACTIVE_CLASS);
-  content.style.willChange = "transform";
-
-  syncRgbShadowClones(target);
-
-  // 검열에서 실제 전송자 이름이 수정된 메시지만 헤더 이름에도 같은 Shake를 적용한다.
-  const messageId = element.dataset.messageId;
-  const senderTransition = context.messageTransitions?.[messageId];
-  const sender = senderTransition?.senderNameModified
-    ? element.querySelector(".message-sender")
-    : null;
-  if (sender instanceof HTMLElement && !context.shakeTargets.has(sender)) {
-    const senderTarget = {
-      element: sender,
-      originalTransform: sender.style.transform,
-      originalWillChange: sender.style.willChange,
+    const target = {
+      element: targetElement,
+      kind: effectTarget.kind,
+      originalTransform: targetElement.style.transform,
+      originalWillChange: targetElement.style.willChange,
       rgbClones: []
     };
-    context.shakeTargets.set(sender, senderTarget);
-    sender.classList.add(SHAKE_ACTIVE_CLASS);
-    sender.style.willChange = "transform";
-    syncRgbShadowClones(senderTarget);
+
+    context.shakeTargets.set(targetElement, target);
+    targetElement.classList.add(SHAKE_ACTIVE_CLASS);
+    targetElement.style.willChange = "transform";
+    syncRgbShadowClones(target);
   }
 }
 
@@ -101,8 +69,8 @@ function startAnimation(context) {
       // RGB가 뒤늦게 켜지거나 먼저 꺼져도 매 프레임 현재 상태에 맞춘다.
       syncRgbShadowClones(target);
 
-      const x = randomOffset(SHAKE_RANGE);
-      const y = randomOffset(SHAKE_RANGE);
+      const x = randomOffset(context.tuning.shakeRange);
+      const y = randomOffset(context.tuning.shakeRange);
       const baseTransform = target.originalTransform?.trim();
       const shakeTransform = `translate(${x}px, ${y}px)`;
 
@@ -112,8 +80,8 @@ function startAnimation(context) {
 
       // RGB 잔상 레이어는 원본 Shake를 따라가면서 서로 다른 상대 흔들림을 가진다.
       for (const clone of target.rgbClones) {
-        const shadowX = randomOffset(SHADOW_RANGE);
-        const shadowY = randomOffset(SHADOW_RANGE);
+        const shadowX = randomOffset(context.tuning.shakeShadowRange);
+        const shadowY = randomOffset(context.tuning.shakeShadowRange);
         clone.style.transform = `translate(${shadowX}px, ${shadowY}px)`;
       }
     }
@@ -139,11 +107,15 @@ function syncRgbShadowClones(target) {
     return;
   }
 
-  if (target.rgbClones.length !== 2) {
+  // Binary rewrites sender.textContent while it animates. That operation removes
+  // child shadow clones from the sender DOM, so recreate detached clones instead
+  // of trusting only the cached array length.
+  const clonesDetached = target.rgbClones.some(clone => clone.parentElement !== content);
+  if (target.rgbClones.length !== 2 || clonesDetached) {
     removeRgbShadowClones(target);
     target.rgbClones = [
-      createRgbShadowClone(content, "red"),
-      createRgbShadowClone(content, "cyan")
+      createRgbShadowClone(target, "red"),
+      createRgbShadowClone(target, "cyan")
     ];
   }
 
@@ -154,13 +126,16 @@ function syncRgbShadowClones(target) {
   }
 }
 
-function createRgbShadowClone(content, channel) {
-  const clone = content.cloneNode(false);
+function createRgbShadowClone(target, channel) {
+  const content = target.element;
+  const clone = target.kind === "sender"
+    ? document.createElement("span")
+    : content.cloneNode(false);
 
   clone.removeAttribute("id");
   clone.setAttribute(RGB_CLONE_ATTR, channel);
   clone.setAttribute("aria-hidden", "true");
-  clone.classList.add("spc-shake-rgb-clone");
+  clone.classList.add("spc-shake-rgb-clone", `spc-shake-rgb-clone-${target.kind}`);
   clone.classList.remove(SHAKE_ACTIVE_CLASS, RGB_ACTIVE_CLASS);
 
   // clone 자체는 실제 레이아웃에 참여하지 않는다.

@@ -80,8 +80,8 @@
   position: relative;
   z-index: auto;
   text-shadow:
-    -4px 0 rgba(255, 0, 0, 0.8),
-     4px 0 rgba(0, 255, 255, 0.8);
+    calc(-1 * var(--spc-rgb-offset)) 0 rgba(255, 0, 0, var(--spc-rgb-opacity)),
+    var(--spc-rgb-offset) 0 rgba(0, 255, 255, var(--spc-rgb-opacity));
 }
 
 /* Shake + RGB: keep the real text clean and render the split colors on absolute shadow clones. */
@@ -110,10 +110,25 @@
   color: transparent !important;
 }
 
+/* Sender is an inline header label, not a message-content box. Its Shake/RGB
+   clone therefore uses a text-sized absolute layer instead of inset:0 sizing. */
+.message-sender.spc-shake-active {
+  overflow: visible !important;
+}
+
+.spc-shake-rgb-clone-sender {
+  inset: auto !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: max-content !important;
+  height: auto !important;
+  white-space: inherit !important;
+}
+
 .spc-shake-rgb-clone[data-spc-shake-rgb-clone="red"] {
-  text-shadow: -4px 0 rgba(255, 0, 0, 0.8) !important;
+  text-shadow: calc(-1 * var(--spc-rgb-offset)) 0 rgba(255, 0, 0, var(--spc-rgb-opacity)) !important;
 }
 
 .spc-shake-rgb-clone[data-spc-shake-rgb-clone="cyan"] {
-  text-shadow: 4px 0 rgba(0, 255, 255, 0.8) !important;
+  text-shadow: var(--spc-rgb-offset) 0 rgba(0, 255, 255, var(--spc-rgb-opacity)) !important;
 }

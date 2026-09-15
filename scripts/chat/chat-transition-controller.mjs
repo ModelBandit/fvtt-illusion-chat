@@ -41,7 +41,7 @@ export class ChatTransitionController {
 
     this.syncing = true;
     try {
-      const { effectTypes, duration } = getTransitionSettings();
+      const { effectTypes, duration, tuning } = getTransitionSettings();
       const transitions = this.#groupTransitions(changes, duration);
       const effectRuns = transitions.flatMap(item =>
         effectTypes.map(effectType => ({
@@ -49,7 +49,8 @@ export class ChatTransitionController {
           context: {
             ...item.context,
             effectType,
-            transitionId: `${item.context.transitionId}:${effectType}`
+            transitionId: `${item.context.transitionId}:${effectType}`,
+            tuning
           }
         }))
       );

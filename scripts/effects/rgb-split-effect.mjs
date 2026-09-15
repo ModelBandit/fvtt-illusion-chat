@@ -2,27 +2,25 @@ import { findChatMessageElements } from "./effect-dom.mjs";
 
 const ACTIVE_CLASS = "spc-rgb-text-active";
 
-function getVisualSource(element) {
-  return element.querySelector(".message-content")
-    ?? element.querySelector(".message-content-wrapper")
-    ?? element;
-}
-
-function shouldAffectSender(element, context) {
-  const messageId = element?.dataset?.messageId;
-  return Boolean(messageId && context?.messageTransitions?.[messageId]?.senderNameModified);
-}
-
 function apply(element, context = {}) {
-  if (!(element instanceof HTMLElement)) return;
-  getVisualSource(element)?.classList.add(ACTIVE_CLASS);
-  if (shouldAffectSender(element, context)) element.querySelector(".message-sender")?.classList.add(ACTIVE_CLASS);
+  for (const target of context.getEffectTargets(element)) {
+    target.element.style.setProperty("--spc-rgb-offset", `${context.tuning.rgbSplitOffset}px`);
+    target.element.style.setProperty("--spc-rgb-opacity", String(context.tuning.rgbSplitOpacity));
+    target.element.classList.add(ACTIVE_CLASS);
+  }
 }
 
 function remove(element) {
   if (!(element instanceof HTMLElement)) return;
-  getVisualSource(element)?.classList.remove(ACTIVE_CLASS);
-  element.querySelector(".message-sender")?.classList.remove(ACTIVE_CLASS);
+
+  // Cleanup cannot depend on the current transition flags: remove our class
+  // from every DOM type this effect can own.
+  for (const target of element.querySelectorAll(".message-content, .message-content-wrapper, .message-sender")) {
+    if (!(target instanceof HTMLElement)) continue;
+    target.classList.remove(ACTIVE_CLASS);
+    target.style.removeProperty("--spc-rgb-offset");
+    target.style.removeProperty("--spc-rgb-opacity");
+  }
 }
 
 export const rgbSplitEffect = {

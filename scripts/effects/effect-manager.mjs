@@ -5,6 +5,32 @@ import { binaryGlitchEffect } from "./binary-glitch-effect.mjs";
 import { rgbSplitEffect } from "./rgb-split-effect.mjs";
 import { shakingEffect } from "./shaking-effect.mjs";
 
+
+function buildEffectTargets(messageElement, context = {}) {
+  if (!(messageElement instanceof HTMLElement)) return [];
+
+  const messageId = messageElement.dataset.messageId;
+  if (!messageId) return [];
+
+  const transition = context.messageTransitions?.[messageId] ?? {};
+  const targets = [];
+  const contentElement = messageElement.querySelector(".message-content")
+    ?? messageElement.querySelector(".message-content-wrapper");
+
+  if (contentElement instanceof HTMLElement) {
+    targets.push({ kind: "content", element: contentElement, messageElement, messageId, transition });
+  }
+
+  if (transition.senderNameModified) {
+    const senderElement = messageElement.querySelector(".message-sender");
+    if (senderElement instanceof HTMLElement) {
+      targets.push({ kind: "sender", element: senderElement, messageElement, messageId, transition });
+    }
+  }
+
+  return targets;
+}
+
 const EFFECTS = {
   none: {
     start() {},
@@ -69,6 +95,7 @@ class EffectManagerClass {
       transitionId,
       effectType,
       duration: context.duration,
+      tuning: context.tuning,
       messageTransitions: context.messageTransitions
     });
     return ack;
@@ -140,12 +167,15 @@ class EffectManagerClass {
       duration: Number.isFinite(Number(payload.duration))
         ? Math.max(0, Number(payload.duration))
         : 500,
+      tuning: payload.tuning,
       messageTransitions: payload.messageTransitions ?? {},
       updatedIds: new Set(),
       commitRequested: false,
       stopRequested: false,
-      safetyTimer: null
+      safetyTimer: null,
+      getEffectTargets: null
     };
+    transition.getEffectTargets = element => buildEffectTargets(element, transition);
 
     this.activeTransitions.set(payload.transitionId, transition);
     for (const messageId of messageIds) {

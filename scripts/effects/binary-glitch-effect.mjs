@@ -202,23 +202,6 @@ function getMessageTransition(
 }
 
 
-function getContentElement(
-  messageElement
-) {
-  return (
-    messageElement.querySelector(
-      ".message-content"
-    )
-    ??
-    messageElement.querySelector(
-      ".message-content-wrapper"
-    )
-    ??
-    null
-  );
-}
-
-
 /**
  * 원래 DOM과 inline style 저장
  */
@@ -569,16 +552,11 @@ function apply(
     return;
   }
 
-  const contentElement =
-    getContentElement(
-      element
-    );
+  const contentTarget = context.getEffectTargets(element)
+    .find(target => target.kind === "content");
+  const contentElement = contentTarget?.element;
 
-  if (
-    !(contentElement instanceof HTMLElement)
-  ) {
-    return;
-  }
+  if (!(contentElement instanceof HTMLElement)) return;
 
   ensureSnapshot(
     context,
@@ -602,37 +580,25 @@ function renderElement(
   context,
   messageId
 ) {
-  const contentElement =
-    getContentElement(element);
+  const effectTargets = context.getEffectTargets(element);
+  const contentElement = effectTargets.find(target => target.kind === "content")?.element;
+  if (!(contentElement instanceof HTMLElement)) return;
 
-  if (
-    !(contentElement instanceof HTMLElement)
-  )
-    return;
+  const transition = getMessageTransition(context, messageId);
+  const step = context.binaryStep ?? 0;
 
-  const transition =
-    getMessageTransition(
-      context,
-      messageId
-    );
-
-  const step =
-    context.binaryStep ?? 0;
-
-  // 검열 단계에서 전송자 이름을 실제로 수정한 경우에만 이름에도 Binary 전환을 적용한다.
-  if (transition.senderNameModified) {
-    const senderElement = element.querySelector(".message-sender");
-    if (senderElement instanceof HTMLElement) {
-      context.binarySenderSnapshots ??= new Map();
-      if (!context.binarySenderSnapshots.has(senderElement)) {
-        context.binarySenderSnapshots.set(senderElement, senderElement.textContent ?? "");
-      }
-      const senderSource = transition.senderSourceText ?? senderElement.textContent ?? "";
-      const senderTarget = transition.senderTargetText ?? senderElement.textContent ?? "";
-      senderElement.textContent = step >= UNICODE_BITS
-        ? senderTarget
-        : renderTransitionText(senderSource, senderTarget, step);
+  // Sender exists in the shared target list only when the moderated name changed.
+  const senderElement = effectTargets.find(target => target.kind === "sender")?.element;
+  if (senderElement instanceof HTMLElement) {
+    context.binarySenderSnapshots ??= new Map();
+    if (!context.binarySenderSnapshots.has(senderElement)) {
+      context.binarySenderSnapshots.set(senderElement, senderElement.textContent ?? "");
     }
+    const senderSource = transition.senderSourceText ?? senderElement.textContent ?? "";
+    const senderTarget = transition.senderTargetText ?? senderElement.textContent ?? "";
+    senderElement.textContent = step >= UNICODE_BITS
+      ? senderTarget
+      : renderTransitionText(senderSource, senderTarget, step);
   }
 
   const sourceText =
@@ -739,10 +705,8 @@ function restoreCurrentElements(
         messageId
       )
     ) {
-      const contentElement =
-        getContentElement(
-          element
-        );
+      const contentElement = context.getEffectTargets(element)
+        .find(target => target.kind === "content")?.element;
 
       if (
         !(contentElement instanceof HTMLElement)
