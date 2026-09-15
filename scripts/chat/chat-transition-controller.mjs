@@ -73,7 +73,12 @@ export class ChatTransitionController {
       for (const { message, desired } of changes) {
         try {
           await message.update(
-            { content: desired },
+            {
+              content: desired,
+              [`flags.${FLAG_SCOPE}.senderUsePrivate`]: Boolean(
+                changes.find(change => change.message.id === message.id)?.usePrivate
+              )
+            },
             { fvttIllusionChatContentSwap: true }
           );
           successfulIds.add(message.id);
@@ -123,18 +128,28 @@ export class ChatTransitionController {
     const changes = [];
     for (const message of slots) {
       const flags = message.flags?.[FLAG_SCOPE];
+      const usePrivate = illusion.has(flags.targetUserId);
       const desired = chooseVisibleHtml({
         defaultHtml: flags.defaultHtml ?? "",
         privateHtml: flags.privateHtml ?? "",
-        usePrivate: illusion.has(flags.targetUserId)
+        usePrivate
       });
-      if ((message.content ?? "") === desired) continue;
+      const senderNameModified = Boolean(flags.senderNameModified);
+      const senderUsePrivate = flags.senderUsePrivate;
+      const senderNeedsSwap = senderNameModified
+        && (typeof senderUsePrivate !== "boolean" || senderUsePrivate !== usePrivate);
+      if ((message.content ?? "") === desired && !senderNeedsSwap) continue;
 
       changes.push({
         message,
         desired,
         baseHtml: flags.defaultHtml || desired || message.content || "&nbsp;",
-        targetUserId: flags.targetUserId
+        targetUserId: flags.targetUserId,
+        senderNameModified,
+        senderOriginalName: flags.senderOriginalName ?? "",
+        senderDisplayName: flags.senderDisplayName ?? "",
+        senderUsePrivate: typeof senderUsePrivate === "boolean" ? senderUsePrivate : !usePrivate,
+        usePrivate
       });
     }
     return changes;
@@ -154,7 +169,14 @@ export class ChatTransitionController {
         sourceHtml: change.message.content ?? "",
         targetHtml: change.desired ?? "",
         baseText: htmlToPlainText(change.baseHtml ?? ""),
-        baseHtml: change.baseHtml ?? ""
+        baseHtml: change.baseHtml ?? "",
+        senderNameModified: change.senderNameModified,
+        senderSourceText: change.usePrivate
+          ? (change.senderOriginalName ?? "")
+          : (change.senderDisplayName ?? ""),
+        senderTargetText: change.usePrivate
+          ? (change.senderDisplayName ?? "")
+          : (change.senderOriginalName ?? "")
       };
       byTarget.set(change.targetUserId, entry);
     }

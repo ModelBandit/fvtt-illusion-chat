@@ -619,6 +619,22 @@ function renderElement(
   const step =
     context.binaryStep ?? 0;
 
+  // 검열 단계에서 전송자 이름을 실제로 수정한 경우에만 이름에도 Binary 전환을 적용한다.
+  if (transition.senderNameModified) {
+    const senderElement = element.querySelector(".message-sender");
+    if (senderElement instanceof HTMLElement) {
+      context.binarySenderSnapshots ??= new Map();
+      if (!context.binarySenderSnapshots.has(senderElement)) {
+        context.binarySenderSnapshots.set(senderElement, senderElement.textContent ?? "");
+      }
+      const senderSource = transition.senderSourceText ?? senderElement.textContent ?? "";
+      const senderTarget = transition.senderTargetText ?? senderElement.textContent ?? "";
+      senderElement.textContent = step >= UNICODE_BITS
+        ? senderTarget
+        : renderTransitionText(senderSource, senderTarget, step);
+    }
+  }
+
   const sourceText =
     transition.sourceText ?? "";
 
@@ -760,6 +776,17 @@ function restoreCurrentElements(
     }
   }
 
+
+  for (const [senderElement, originalText] of context.binarySenderSnapshots?.entries?.() ?? []) {
+    if (!(senderElement instanceof HTMLElement)) continue;
+    const messageElement = senderElement.closest("[data-message-id]");
+    const messageId = messageElement?.dataset?.messageId;
+    const transition = messageId ? getMessageTransition(context, messageId) : null;
+    senderElement.textContent = transition?.senderNameModified
+      ? (transition.senderTargetText ?? originalText)
+      : originalText;
+  }
+  context.binarySenderSnapshots?.clear?.();
 
   context.binarySnapshots
     ?.clear?.();
@@ -911,6 +938,9 @@ export const binaryGlitchEffect = {
       new Map();
 
     context.binaryLayers =
+      new Map();
+
+    context.binarySenderSnapshots =
       new Map();
 
 

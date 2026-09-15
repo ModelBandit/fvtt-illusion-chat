@@ -65,6 +65,25 @@ function apply(element, context) {
   content.style.willChange = "transform";
 
   syncRgbShadowClones(target);
+
+  // 검열에서 실제 전송자 이름이 수정된 메시지만 헤더 이름에도 같은 Shake를 적용한다.
+  const messageId = element.dataset.messageId;
+  const senderTransition = context.messageTransitions?.[messageId];
+  const sender = senderTransition?.senderNameModified
+    ? element.querySelector(".message-sender")
+    : null;
+  if (sender instanceof HTMLElement && !context.shakeTargets.has(sender)) {
+    const senderTarget = {
+      element: sender,
+      originalTransform: sender.style.transform,
+      originalWillChange: sender.style.willChange,
+      rgbClones: []
+    };
+    context.shakeTargets.set(sender, senderTarget);
+    sender.classList.add(SHAKE_ACTIVE_CLASS);
+    sender.style.willChange = "transform";
+    syncRgbShadowClones(senderTarget);
+  }
 }
 
 function startAnimation(context) {
