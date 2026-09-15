@@ -2,7 +2,7 @@ import { CORE_ID, FLAG_SCOPE, MODULE_ID, SCHEMA_VERSION } from "./constants.mjs"
 import { ChatTransitionController, chooseVisibleHtml } from "./chat/chat-transition-controller.mjs";
 import { isValidModerationRequest, registerHijackMessage } from "./chat/hijack-message.mjs";
 import { EffectManager } from "./effects/effect-manager.mjs";
-import { registerSettings } from "./settings/settings.mjs";
+import { refreshSettingsLocalization, registerSettings } from "./settings/settings.mjs";
 
 const state = {
   core: null,
@@ -24,9 +24,21 @@ const transitionController = new ChatTransitionController({
   getIllusionUserIds: () => state.core?.getIllusionUserIds?.() ?? []
 });
 
+// 모듈 평가 시점에는 game이 아직 준비되지 않을 수 있으므로 Core가 선공개한 전역 API만 사용한다.
+const coreApi = globalThis.FVTTIllusionCore;
+
+// Core가 자기 init에서 공통 데이터/API 준비를 끝낸 뒤 호출한다.
+// Foundry의 settings 등록은 Chat 자신의 init 훅에 남겨 생명주기를 침범하지 않는다.
+coreApi?.registerInitializer?.(MODULE_ID, core => {
+  state.core = core;
+  state.textMap = core.getLanguageMap?.("chat") ?? {};
+});
+
 Hooks.once("init", () => {
   state.core = state.core ?? game.modules.get(CORE_ID)?.api ?? globalThis.FVTTIllusionCore;
-  state.textMap = state.core?.getLanguageMap?.("chat") ?? {};
+  state.textMap = state.textMap && Object.keys(state.textMap).length
+    ? state.textMap
+    : state.core?.getLanguageMap?.("chat") ?? {};
   registerSettings(state.core, state.textMap);
 });
 
@@ -44,7 +56,10 @@ Hooks.once("ready", async () => {
 
   Hooks.on(`${CORE_ID}.languageChanged`, () => {
     state.textMap = state.core?.getLanguageMap?.("chat") ?? {};
-    if (game.user?.isGM) state.core?.refresh?.();
+    refreshSettingsLocalization(state.textMap);
+    if (!game.user?.isGM) return;
+    registerWithCore();
+    state.core?.refresh?.();
   });
 
   // 플레이어 일반 채팅 하이잭은 별도 모듈에서 담당한다.
@@ -56,22 +71,7 @@ Hooks.once("ready", async () => {
 
   if (!game.user?.isGM) return;
 
-  state.unregisterModule = state.core.registerModule({
-    id: MODULE_ID,
-    title: t("moduleTitle"),
-    description: t("moduleDescription"),
-    order: 100,
-    renderControl: renderChatControls,
-    onSelectionChanged: detail => {
-      saveVisibleDrafts();
-      for (const userId of detail.selectedUserIds ?? []) {
-        if (!state.drafts.has(userId)) state.drafts.set(userId, state.baseDraft);
-      }
-    },
-    onIllusionChanged: async detail => {
-      await transitionController.queueSync(detail.changedUserId ?? null);
-    }
-  });
+  registerWithCore();
 
   bindChatInput();
   await transitionController.queueSync();
@@ -172,6 +172,26 @@ function t(key, replacements = {}) {
 
 function getGmIds() {
   return Array.from(game.users ?? []).filter(user => user.isGM).map(user => user.id);
+}
+
+function registerWithCore() {
+  state.unregisterModule?.();
+  state.unregisterModule = state.core.registerModule({
+    id: MODULE_ID,
+    title: t("moduleTitle"),
+    description: t("moduleDescription"),
+    order: 100,
+    renderControl: renderChatControls,
+    onSelectionChanged: detail => {
+      saveVisibleDrafts();
+      for (const userId of detail.selectedUserIds ?? []) {
+        if (!state.drafts.has(userId)) state.drafts.set(userId, state.baseDraft);
+      }
+    },
+    onIllusionChanged: async detail => {
+      await transitionController.queueSync(detail.changedUserId ?? null);
+    }
+  });
 }
 
 function renderChatControls(host) {

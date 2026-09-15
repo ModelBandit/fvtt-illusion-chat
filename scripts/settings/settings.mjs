@@ -62,6 +62,28 @@ export function registerSettings(core, textMap = {}) {
   }
 }
 
+export function refreshSettingsLocalization(textMap = {}) {
+  for (const setting of EFFECT_SETTINGS) {
+    const config = game.settings.settings.get(`${MODULE_ID}.${setting.key}`);
+    if (!config) continue;
+    config.name = t(textMap, "settings.effectName", { name: t(textMap, `settings.${setting.labelKey}`) });
+    config.hint = t(textMap, "settings.effectHint", { name: t(textMap, `settings.${setting.labelKey}`) });
+  }
+
+  const duration = game.settings.settings.get(`${MODULE_ID}.transitionDuration`);
+  if (duration) {
+    duration.name = t(textMap, "settings.durationName");
+    duration.hint = t(textMap, "settings.durationHint");
+  }
+
+  for (const setting of ADVANCED_SETTINGS) {
+    const config = game.settings.settings.get(`${MODULE_ID}.${setting.key}`);
+    if (!config) continue;
+    config.name = t(textMap, `settings.${setting.key}Name`);
+    config.hint = t(textMap, `settings.${setting.key}Hint`);
+  }
+}
+
 export function getTransitionSettings() {
   const durationValue = Number(game.settings.get(MODULE_ID, "transitionDuration"));
   const effectTypes = EFFECT_SETTINGS

@@ -2,21 +2,23 @@
   "id": "fvtt-illusion-chat",
   "title": "fvtt-illusion-chat",
   "description": "Per-player chat variants and live log replacement for FVTT Illusion Core.",
-  "version": "0.1.0",
+  "version": "0.3.5",
   "compatibility": {
-    "minimum": "0",
-    "verified": "0"
+    "minimum": "12",
+    "verified": "12"
   },
   "relationships": {
     "requires": [
       {
         "id": "fvtt-illusion-core",
         "type": "module",
-        "compatibility": { "minimum": "0.1.0" }
+        "compatibility": {
+          "minimum": "0.1.0"
+        }
       }
     ]
   },
-  "socket":true,
+  "socket": true,
   "esmodules": [
     "scripts/fvtt-illusion-chat.mjs"
   ],
