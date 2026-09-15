@@ -1,24 +1,33 @@
 import { MODULE_ID } from "../constants.mjs";
 
 const EFFECT_SETTINGS = [
-  { key: "effectNoise", effectType: "noise", name: "Noise", default: true },
-  { key: "effectBinaryGlitch", effectType: "binaryGlitch", name: "Binary Glitch", default: false },
-  { key: "effectRgbSplit", effectType: "rgbSplit", name: "RGB Split", default: false },
-  { key: "shakingEffect", effectType: "shaking", name: "Shake", default: false }
+  { key: "effectNoise", effectType: "noise", labelKey: "effectNoiseLabel", default: true },
+  { key: "effectBinaryGlitch", effectType: "binaryGlitch", labelKey: "effectBinaryGlitchLabel", default: false },
+  { key: "effectRgbSplit", effectType: "rgbSplit", labelKey: "effectRgbSplitLabel", default: false },
+  { key: "shakingEffect", effectType: "shaking", labelKey: "shakingEffectLabel", default: false }
 ];
 
 const ADVANCED_SETTINGS = [
-  { key: "shakeRange", name: "Advanced: Shake Range (px)", hint: "Maximum random movement range used by the Shake effect.", default: 6, min: 0, max: 30, step: 0.5 },
-  { key: "shakeShadowRange", name: "Advanced: Shake RGB Shadow Range (px)", hint: "Random movement range used by RGB shadow clones while Shake and RGB Split are combined.", default: 3, min: 0, max: 30, step: 0.5 },
-  { key: "rgbSplitOffset", name: "Advanced: RGB Split Offset (px)", hint: "Horizontal distance of the red and cyan RGB Split shadows.", default: 4, min: 0, max: 30, step: 0.5 },
-  { key: "rgbSplitOpacity", name: "Advanced: RGB Split Opacity", hint: "Opacity of the red and cyan RGB Split shadows.", default: 0.8, min: 0, max: 1, step: 0.05 }
+  { key: "shakeRange", default: 6, min: 0, max: 30, step: 0.5 },
+  { key: "shakeShadowRange", default: 3, min: 0, max: 30, step: 0.5 },
+  { key: "rgbSplitOffset", default: 4, min: 0, max: 30, step: 0.5 },
+  { key: "rgbSplitOpacity", default: 0.8, min: 0, max: 1, step: 0.05 }
 ];
 
-export function registerSettings() {
+function t(textMap, key, replacements = {}) {
+  const value = String(key ?? "").split(".").reduce((node, part) => node?.[part], textMap);
+  let text = typeof value === "string" ? value : String(key ?? "");
+  for (const [name, replacement] of Object.entries(replacements ?? {})) {
+    text = text.replaceAll(`{${name}}`, String(replacement));
+  }
+  return text;
+}
+
+export function registerSettings(core, textMap = {}) {
   for (const setting of EFFECT_SETTINGS) {
     game.settings.register(MODULE_ID, setting.key, {
-      name: `Chat Transition Effect: ${setting.name}`,
-      hint: `${setting.name} 효과를 채팅 내용 전환 시 사용합니다. 여러 효과를 동시에 활성화할 수 있습니다.`,
+      name: t(textMap, "settings.effectName", { name: t(textMap, `settings.${setting.labelKey}`) }),
+      hint: t(textMap, "settings.effectHint", { name: t(textMap, `settings.${setting.labelKey}`) }),
       scope: "world",
       config: true,
       type: Boolean,
@@ -27,8 +36,8 @@ export function registerSettings() {
   }
 
   game.settings.register(MODULE_ID, "transitionDuration", {
-    name: "Chat Transition Duration (ms)",
-    hint: "활성화된 전환 효과가 content 교체 전까지 진행될 최소 시간입니다.",
+    name: t(textMap, "settings.durationName"),
+    hint: t(textMap, "settings.durationHint"),
     scope: "world",
     config: true,
     type: Number,
@@ -42,8 +51,8 @@ export function registerSettings() {
 
   for (const setting of ADVANCED_SETTINGS) {
     game.settings.register(MODULE_ID, setting.key, {
-      name: setting.name,
-      hint: setting.hint,
+      name: t(textMap, `settings.${setting.key}Name`),
+      hint: t(textMap, `settings.${setting.key}Hint`),
       scope: "world",
       config: true,
       type: Number,

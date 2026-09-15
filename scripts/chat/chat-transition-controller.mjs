@@ -27,7 +27,7 @@ export class ChatTransitionController {
 
   queueSync(targetUserId = null) {
     this.syncChain = this.syncChain
-      .catch(error => console.error(`${MODULE_ID} | 이전 로그 내용 동기화 실패`, error))
+      .catch(error => console.error(`${MODULE_ID} | Previous chat content sync failed`, error))
       .then(() => this.synchronize(targetUserId));
     return this.syncChain;
   }

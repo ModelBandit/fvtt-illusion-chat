@@ -16,14 +16,19 @@ const state = {
   baseInputHandler: null,
   sending: false,
   moderationQueue: [],
-  moderationBusy: false
+  moderationBusy: false,
+  textMap: {}
 };
 
 const transitionController = new ChatTransitionController({
   getIllusionUserIds: () => state.core?.getIllusionUserIds?.() ?? []
 });
 
-Hooks.once("init", () => registerSettings());
+Hooks.once("init", () => {
+  state.core = state.core ?? game.modules.get(CORE_ID)?.api ?? globalThis.FVTTIllusionCore;
+  state.textMap = state.core?.getLanguageMap?.("chat") ?? {};
+  registerSettings(state.core, state.textMap);
+});
 
 Hooks.once("ready", async () => {
   EffectManager.registerSocket();
@@ -31,22 +36,30 @@ Hooks.once("ready", async () => {
 
   state.core = game.modules.get(CORE_ID)?.api ?? globalThis.FVTTIllusionCore;
   if (!state.core) {
-    ui.notifications?.error("FVTT Illusion Chat requires FVTT Illusion Core.");
+    ui.notifications?.error(t("requiresCore"));
     return;
   }
+
+  state.textMap = state.core.getLanguageMap?.("chat") ?? {};
+
+  Hooks.on(`${CORE_ID}.languageChanged`, () => {
+    state.textMap = state.core?.getLanguageMap?.("chat") ?? {};
+    if (game.user?.isGM) state.core?.refresh?.();
+  });
 
   // 플레이어 일반 채팅 하이잭은 별도 모듈에서 담당한다.
   // 하이잭 활성 조건은 환상 토글이 아니라 Core의 전송 체크박스(selected)다.
   registerHijackMessage({
-    getSelectedUserIds: () => state.core?.getSelectedUserIds?.() ?? []
+    getSelectedUserIds: () => state.core?.getSelectedUserIds?.() ?? [],
+    localize: (key, replacements) => t(key, replacements)
   });
 
   if (!game.user?.isGM) return;
 
   state.unregisterModule = state.core.registerModule({
     id: MODULE_ID,
-    title: "Chat",
-    description: "선택한 플레이어에게 서로 다른 채팅을 전송",
+    title: t("moduleTitle"),
+    description: t("moduleDescription"),
     order: 100,
     renderControl: renderChatControls,
     onSelectionChanged: detail => {
@@ -148,6 +161,15 @@ function getIllusionSet() {
   return new Set(state.core?.getIllusionUserIds?.() ?? []);
 }
 
+function t(key, replacements = {}) {
+  const value = String(key ?? "").split(".").reduce((node, part) => node?.[part], state.textMap);
+  let text = typeof value === "string" ? value : String(key ?? "");
+  for (const [name, replacement] of Object.entries(replacements ?? {})) {
+    text = text.replaceAll(`{${name}}`, String(replacement));
+  }
+  return text;
+}
+
 function getGmIds() {
   return Array.from(game.users ?? []).filter(user => user.isGM).map(user => user.id);
 }
@@ -178,7 +200,7 @@ function renderChatControls(host) {
   if (!players.length) {
     const empty = document.createElement("div");
     empty.className = "spc-feature-empty";
-    empty.textContent = "플레이어를 선택하면 개인 문자열 입력칸이 나타납니다.";
+    empty.textContent = t("selectPlayerHint");
     inputsHost.appendChild(empty);
   } else {
     for (const player of players) {
@@ -193,7 +215,7 @@ function renderChatControls(host) {
 
       const textarea = document.createElement("textarea");
       textarea.dataset.userId = player.id;
-      textarea.placeholder = `${player.name}에게만 보낼 문자열`;
+      textarea.placeholder = t("privatePlaceholder", { name: player.name });
       textarea.value = state.drafts.get(player.id) ?? state.baseDraft;
       textarea.spellcheck = false;
       textarea.addEventListener("input", () => state.drafts.set(player.id, textarea.value));
@@ -224,7 +246,7 @@ function renderModerationQueueInChatLogs({ scroll = false } = {}) {
         log.appendChild(entry);
       }
       const position = entry.querySelector("[data-spc-moderation-position]");
-      if (position) position.textContent = `검열 대기 ${index + 1}/${state.moderationQueue.length}`;
+      if (position) position.textContent = t("moderationPosition", { current: index + 1, total: state.moderationQueue.length });
       const button = entry.querySelector(".spc-moderation-send");
       if (button) button.disabled = state.moderationBusy;
     }
@@ -246,12 +268,12 @@ function createModerationLogEntry(request) {
 
   const sender = document.createElement("h4");
   sender.className = "message-sender";
-  sender.textContent = request.displayName || request.sourceUserName || "플레이어";
+  sender.textContent = request.displayName || request.sourceUserName || t("player");
 
   const metadata = document.createElement("span");
   metadata.className = "message-metadata spc-moderation-position";
   metadata.dataset.spcModerationPosition = "true";
-  metadata.textContent = "검열 대기";
+  metadata.textContent = t("moderationPending");
   header.append(sender, metadata);
 
   const content = document.createElement("div");
@@ -260,16 +282,16 @@ function createModerationLogEntry(request) {
   const senderRow = document.createElement("label");
   senderRow.className = "spc-moderation-sender";
   const senderLabel = document.createElement("span");
-  senderLabel.textContent = "표시 이름";
+  senderLabel.textContent = t("displayName");
   const senderInput = document.createElement("input");
   senderInput.type = "text";
   senderInput.maxLength = 100;
   senderInput.dataset.spcModerationField = "display-name";
   senderInput.value = request.displayName ?? request.sourceUserName ?? "";
-  senderInput.placeholder = request.sourceUserName || "플레이어 이름";
+  senderInput.placeholder = request.sourceUserName || t("playerName");
   senderInput.addEventListener("input", () => {
     request.displayName = senderInput.value;
-    sender.textContent = senderInput.value.trim() || request.sourceUserName || "플레이어";
+    sender.textContent = senderInput.value.trim() || request.sourceUserName || t("player");
   });
   senderInput.addEventListener("keydown", event => event.stopPropagation());
   senderRow.append(senderLabel, senderInput);
@@ -281,7 +303,7 @@ function createModerationLogEntry(request) {
   const replacement = document.createElement("textarea");
   replacement.className = "spc-moderation-replacement";
   replacement.dataset.spcModerationField = "replacement";
-  replacement.placeholder = "환상 상태 플레이어에게 보낼 가짜 채팅";
+  replacement.placeholder = t("replacementPlaceholder");
   replacement.value = request.replacementText ?? "";
   replacement.spellcheck = false;
   replacement.addEventListener("input", () => { request.replacementText = replacement.value; });
@@ -296,7 +318,7 @@ function createModerationLogEntry(request) {
 
   const actions = document.createElement("div");
   actions.className = "spc-moderation-actions";
-  const sendButton = makeModerationButton("전송", "spc-moderation-send", () => approveModerationRequest(request, replacement.value));
+  const sendButton = makeModerationButton(t("send"), "spc-moderation-send", () => approveModerationRequest(request, replacement.value));
   sendButton.disabled = state.moderationBusy;
   actions.append(sendButton);
 
@@ -324,8 +346,8 @@ async function approveModerationRequest(request, replacementText) {
     await sendModeratedPlayerMessage({ request, defaultHtml, privateHtml });
     state.moderationQueue = state.moderationQueue.filter(item => item.requestId !== request.requestId);
   } catch (error) {
-    console.error(`${MODULE_ID} | 검열 채팅 전송 실패`, error);
-    ui.notifications?.error(`검열 채팅 전송 실패: ${error.message}`);
+    console.error(`${MODULE_ID} | Moderated chat send failed`, error);
+    ui.notifications?.error(t("moderationSendFailed", { error: error.message }));
   } finally {
     state.moderationBusy = false;
     renderModerationQueueInChatLogs();
@@ -467,8 +489,8 @@ async function onBaseChatKeyDown(event) {
       await createPlayerSlotMessage({ batchId, player, defaultHtml, privateHtml, visibleHtml, usePrivate });
     }
   } catch (error) {
-    console.error(`${MODULE_ID} | 메시지 전송 실패`, error);
-    ui.notifications?.error(`개인 채팅 분기 전송 실패: ${error.message}`);
+    console.error(`${MODULE_ID} | Message send failed`, error);
+    ui.notifications?.error(t("privateSendFailed", { error: error.message }));
   } finally {
     state.sending = false;
   }
@@ -573,7 +595,7 @@ function registerModerationSocket() {
       replacementText: ""
     });
     renderModerationQueueInChatLogs({ scroll: true });
-    ui.notifications?.info(`${sourceUser.name || "플레이어"}의 채팅이 검열 대기 중입니다.`);
+    ui.notifications?.info(t("moderationWaiting", { name: sourceUser.name || t("player") }));
   });
 }
 

@@ -8,7 +8,7 @@ let registered = false;
  * 활성 조건은 Core의 "전송 체크박스(selected)"가 하나 이상 선택된 경우다.
  * 환상 상태 토글(illusion)은 이 단계에서 사용하지 않는다.
  */
-export function registerHijackMessage({ getSelectedUserIds } = {}) {
+export function registerHijackMessage({ getSelectedUserIds, localize } = {}) {
   if (registered) return;
   registered = true;
 
@@ -50,7 +50,7 @@ export function registerHijackMessage({ getSelectedUserIds } = {}) {
     });
 
     game.socket.emit(`module.${MODULE_ID}`, request);
-    ui.notifications?.info("채팅이 GM 검열 대기열로 전송되었습니다.");
+    ui.notifications?.info(localize?.("moderationQueued") ?? "moderationQueued");
   });
 }
 
