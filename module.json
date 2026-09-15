@@ -27,5 +27,5 @@
   ],
   "url": "https://github.com/ModelBandit/fvtt-illusion-chat",
   "manifest": "https://raw.githubusercontent.com/ModelBandit/fvtt-illusion-chat/main/module.json",
-  "download": "https://github.com/ModelBandit/fvtt-illusion-chat/archive/refs/heads/main.zip"
+  "download": "https://github.com/ModelBandit/fvtt-illusion-chat/archive/refs/tags/v0.3.5.zip"
 }
