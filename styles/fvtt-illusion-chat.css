@@ -132,8 +132,3 @@
 .spc-shake-rgb-clone[data-spc-shake-rgb-clone="cyan"] {
   text-shadow: var(--spc-rgb-offset) 0 rgba(0, 255, 255, var(--spc-rgb-opacity)) !important;
 }
-
-/* Scene image overlay controls */
-.spc-scene-image-controls { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:5px; margin-top:7px; }
-.spc-scene-image-controls input { min-width:0; height:28px; margin:0; }
-.spc-scene-image-controls button { width:auto; min-width:58px; height:28px; margin:0; padding:2px 7px; }
