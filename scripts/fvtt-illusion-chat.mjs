@@ -17,7 +17,12 @@ const state = {
   sending: false,
   moderationQueue: [],
   moderationBusy: false,
-  textMap: {}
+  textMap: {},
+  sceneImagePath: "",
+  sceneImageContainer: null,
+  sceneImageSprite: null,
+  sceneImageFilter: null,
+  sceneImageTicker: null
 };
 
 const transitionController = new ChatTransitionController({
@@ -45,6 +50,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", async () => {
   EffectManager.registerSocket();
   registerModerationSocket();
+  registerSceneImageSocket();
 
   state.core = game.modules.get(CORE_ID)?.api ?? globalThis.FVTTIllusionCore;
   if (!state.core) {
@@ -202,12 +208,18 @@ function renderChatControls(host) {
     host.innerHTML = `
       <div class="spc-chat-feature" data-spc-chat-feature>
         <div class="spc-inputs" data-spc-inputs></div>
+        <div class="spc-scene-image-controls" data-spc-scene-image-controls>
+          <input type="text" data-spc-scene-image-path placeholder="Image path" />
+          <button type="button" data-spc-scene-image-browse>Browse</button>
+          <button type="button" data-spc-scene-image-show>Show</button>
+        </div>
       </div>
     `;
   }
 
   const inputsHost = host.querySelector("[data-spc-inputs]");
   if (!inputsHost) return;
+  bindSceneImageControls(host);
 
   for (const textarea of inputsHost.querySelectorAll("textarea[data-user-id]")) {
     state.drafts.set(textarea.dataset.userId, textarea.value);
@@ -643,4 +655,134 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+
+function bindSceneImageControls(host) {
+  const pathInput = host.querySelector("[data-spc-scene-image-path]");
+  const browseButton = host.querySelector("[data-spc-scene-image-browse]");
+  const showButton = host.querySelector("[data-spc-scene-image-show]");
+  if (!(pathInput instanceof HTMLInputElement) || !browseButton || !showButton) return;
+
+  if (!pathInput.value && state.sceneImagePath) pathInput.value = state.sceneImagePath;
+  pathInput.addEventListener("input", () => { state.sceneImagePath = pathInput.value.trim(); }, { once: false });
+
+  if (browseButton.dataset.bound !== "true") {
+    browseButton.dataset.bound = "true";
+    browseButton.addEventListener("click", () => {
+      const picker = new FilePicker({
+        type: "image",
+        current: pathInput.value || "",
+        callback: path => {
+          state.sceneImagePath = path;
+          pathInput.value = path;
+        }
+      });
+      picker.browse();
+    });
+  }
+
+  if (showButton.dataset.bound !== "true") {
+    showButton.dataset.bound = "true";
+    showButton.addEventListener("click", () => {
+      const path = pathInput.value.trim();
+      if (!path) return ui.notifications?.warn("Select an image first.");
+      state.sceneImagePath = path;
+      emitSceneImage({ action: "show", path });
+    });
+  }
+}
+
+function registerSceneImageSocket() {
+  game.socket.on(`module.${MODULE_ID}`, payload => {
+    if (payload?.type !== "scene-image") return;
+    if (payload.action === "show") void showSceneImage(payload.path);
+    else if (payload.action === "hide") hideSceneImage();
+  });
+}
+
+function emitSceneImage(payload) {
+  game.socket.emit(`module.${MODULE_ID}`, { type: "scene-image", ...payload });
+  if (payload.action === "show") void showSceneImage(payload.path);
+  else if (payload.action === "hide") hideSceneImage();
+}
+
+async function showSceneImage(path) {
+  hideSceneImage();
+  if (!canvas?.app?.stage || !globalThis.PIXI) return;
+
+  try {
+    const texture = PIXI.Texture.from(path);
+    if (texture.baseTexture && !texture.baseTexture.valid) {
+      await new Promise((resolve, reject) => {
+        texture.baseTexture.once("loaded", resolve);
+        texture.baseTexture.once("error", reject);
+      });
+    }
+
+    const container = new PIXI.Container();
+    container.eventMode = "none";
+    container.zIndex = 100000;
+    container.sortableChildren = true;
+
+    const sprite = new PIXI.Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.position.set(canvas.app.renderer.width / 2, canvas.app.renderer.height / 2);
+
+    const maxW = canvas.app.renderer.width * 0.85;
+    const maxH = canvas.app.renderer.height * 0.85;
+    const scale = Math.min(maxW / Math.max(1, texture.width), maxH / Math.max(1, texture.height), 1);
+    sprite.scale.set(scale);
+
+    const fragment = `
+      varying vec2 vTextureCoord;
+      uniform sampler2D uSampler;
+      uniform float time;
+      float hash(float n) { return fract(sin(n) * 43758.5453123); }
+      void main(void) {
+        vec2 uv = vTextureCoord;
+        float y = floor(uv.y * 42.0);
+        float gate = step(0.72, hash(y * 17.17 + floor(time * 8.0)));
+        float coarse = (hash(y * 7.31 + floor(time * 5.0)) - 0.5) * 0.20;
+        float fine = sin(uv.y * 260.0 + time * 17.0) * 0.006;
+        uv.x += coarse * gate + fine * gate;
+        gl_FragColor = texture2D(uSampler, uv);
+      }
+    `;
+    const filter = new PIXI.Filter(undefined, fragment, { time: 0 });
+    sprite.filters = [filter];
+    container.addChild(sprite);
+    canvas.app.stage.addChild(container);
+
+    const ticker = () => {
+      if (!filter?.uniforms) return;
+      filter.uniforms.time = performance.now() / 1000;
+      sprite.position.set(canvas.app.renderer.width / 2, canvas.app.renderer.height / 2);
+    };
+    canvas.app.ticker.add(ticker);
+
+    state.sceneImageContainer = container;
+    state.sceneImageSprite = sprite;
+    state.sceneImageFilter = filter;
+    state.sceneImageTicker = ticker;
+
+    window.setTimeout(() => {
+      if (state.sceneImageContainer === container) hideSceneImage();
+    }, 1800);
+  } catch (error) {
+    console.error(`${MODULE_ID} | Scene image failed`, error);
+    ui.notifications?.error(`Image effect failed: ${error.message}`);
+  }
+}
+
+function hideSceneImage() {
+  if (state.sceneImageTicker && canvas?.app?.ticker) canvas.app.ticker.remove(state.sceneImageTicker);
+  state.sceneImageTicker = null;
+  if (state.sceneImageContainer) {
+    state.sceneImageContainer.parent?.removeChild(state.sceneImageContainer);
+    state.sceneImageContainer.destroy({ children: true });
+  }
+  state.sceneImageContainer = null;
+  state.sceneImageSprite = null;
+  state.sceneImageFilter = null;
 }
