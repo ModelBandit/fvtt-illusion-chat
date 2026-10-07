@@ -1,9 +1,9 @@
 
 const MODULE_ROOT = "modules/fvtt-illusion-1-chat";
 
-Hooks.once("init", async () => {
+Hooks.once("fvtt-illusion-core.lateinit", async () => {
   let sharedData = globalThis.fvttIllusion.sharedData;
-  const moduleInfo = await globalThis.fvttIllusion.loadFile(MODULE_ROOT, "module", "json");
+  const moduleInfo = await globalThis.fvttIllusion.loadFileFunc(MODULE_ROOT, "module", "json");
   for(const key of Object.keys(moduleInfo))
   {
     sharedData.moduleInfo.chat[key] = moduleInfo[key];
